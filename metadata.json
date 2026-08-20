@@ -1,0 +1,10 @@
+{
+  "name": "Superfood",
+  "description": "Aplicación web para el registro y gestión de productos, con escáner de códigos de barra, revisión de pendientes y control de usuarios.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
