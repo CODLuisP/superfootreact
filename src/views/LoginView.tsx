@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { api } from '../services/api';
-import { Lock, User as UserIcon, AlertCircle, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
+import { Lock, User as UserIcon, AlertCircle, ArrowRight } from 'lucide-react';
 
 interface LoginViewProps {
   onLoginSuccess: (user: User) => void;
@@ -28,11 +28,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     entrar(username.trim(), password);
-  };
-
-  const handleQuickLogin = (role: 'ADMIN' | 'OPERADOR') => {
-    if (role === 'ADMIN') entrar('admin', 'admin');
-    else entrar('operador', 'operador');
   };
 
   return (
@@ -85,7 +80,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   id="username-input"
                   type="text"
                   required
-                  placeholder="ej. admin u operador"
+                  placeholder="Ingresa tu usuario"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition"
@@ -132,44 +127,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               )}
             </button>
           </form>
-
-          {/* Quick Preset Logins */}
-          <div className="mt-8 pt-6 border-t border-gray-100">
-            <p className="text-xs font-medium text-gray-500 mb-3 text-center">
-              Acceso rápido para pruebas (1 clic):
-            </p>
-            <div className="grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                id="quick-login-admin-button"
-                onClick={() => handleQuickLogin('ADMIN')}
-                className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/80 text-emerald-900 transition text-left"
-              >
-                <div className="flex items-center gap-1.5 font-bold text-xs">
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                  <span>Admin</span>
-                </div>
-                <span className="text-[10px] text-emerald-700 mt-0.5">
-                  admin / admin
-                </span>
-              </button>
-
-              <button
-                type="button"
-                id="quick-login-operador-button"
-                onClick={() => handleQuickLogin('OPERADOR')}
-                className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 text-blue-900 transition text-left"
-              >
-                <div className="flex items-center gap-1.5 font-bold text-xs">
-                  <UserCheck className="h-3.5 w-3.5 text-blue-600" />
-                  <span>Operador</span>
-                </div>
-                <span className="text-[10px] text-blue-700 mt-0.5">
-                  operador / operador
-                </span>
-              </button>
-            </div>
-          </div>
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">

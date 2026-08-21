@@ -17,7 +17,6 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import Database from 'better-sqlite3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,29 +29,10 @@ const CF_ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID;
 const CF_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const CF_BASE = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/images/v1`;
 
-// ─────────────── BD de usuarios (propia del panel) ───────────────
+// ─────────────── Almacenamiento de usuarios (JSON puro, 100% compatible con Vercel) ───────────────
 const DATA_DIR = process.env.VERCEL ? '/tmp' : path.join(__dirname, 'data');
-fs.mkdirSync(DATA_DIR, { recursive: true });
-const db = new Database(path.join(DATA_DIR, 'usuarios.db'));
-db.pragma('journal_mode = WAL');
-db.exec(`
-  CREATE TABLE IF NOT EXISTS usuarios (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    username      TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    name          TEXT,
-    email         TEXT,
-    role          TEXT NOT NULL DEFAULT 'OPERADOR',
-    active        INTEGER NOT NULL DEFAULT 1,
-    created_at    TEXT DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-// Migración suave: columnas para la API key personal de cada usuario (se
-// generan en el backend de catálogo y se guardan aquí junto al usuario).
-for (const [col, tipo] of [['api_key', 'TEXT'], ['api_key_id', 'INTEGER']]) {
-  const existe = db.prepare('PRAGMA table_info(usuarios)').all().some((c) => c.name === col);
-  if (!existe) db.exec(`ALTER TABLE usuarios ADD COLUMN ${col} ${tipo}`);
-}
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch { /* noop */ }
+const USERS_FILE = path.join(DATA_DIR, 'usuarios.json');
 
 // ─────────────── Contraseñas (scrypt) ───────────────
 function hashPassword(pw) {
@@ -69,40 +49,144 @@ function verifyPassword(pw, stored) {
   return expected.length === dk.length && crypto.timingSafeEqual(expected, dk);
 }
 
-// Siembra: el usuario de ADMIN_USER nace como SUPERADMIN (cuenta permanente,
-// indestructible) y operador/operador como OPERADOR normal, si la tabla está vacía.
-try {
-  const n = db.prepare('SELECT COUNT(*) AS n FROM usuarios').get().n;
-  if (n === 0) {
-    const seed = db.prepare('INSERT INTO usuarios (username, password_hash, name, email, role, active) VALUES (?,?,?,?,?,1)');
-    seed.run(process.env.ADMIN_USER || 'admin', hashPassword(process.env.ADMIN_PASSWORD || 'admin'), 'Administrador Principal', 'admin@superfood.com', 'SUPERADMIN');
-    seed.run('operador', hashPassword('operador'), 'Operador', 'operador@superfood.com', 'OPERADOR');
-    console.log('[usuarios] Sembrados admin (SUPERADMIN) y operador/operador. Cámbialos en producción.');
+function loadUsersFromDisk() {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('[usuarios] Error al leer archivo de usuarios:', e);
   }
-} catch (e) { /* carrera al sembrar: ignorar */ }
+  return [];
+}
+
+function saveUsersToDisk(usersList) {
+  try {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(usersList, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[usuarios] Error al guardar archivo de usuarios:', e);
+  }
+}
+
+let _usuariosMem = loadUsersFromDisk();
+
+function initUsuarios() {
+  const adminUser = (process.env.ADMIN_USER || 'owen').trim();
+  const adminPass = process.env.ADMIN_PASSWORD || 'owen852';
+
+  if (_usuariosMem.length === 0) {
+    _usuariosMem = [
+      {
+        id: 1,
+        username: adminUser,
+        password_hash: hashPassword(adminPass),
+        name: 'Administrador Principal',
+        email: 'admin@superfood.com',
+        role: 'SUPERADMIN',
+        active: 1,
+        created_at: new Date().toISOString(),
+        api_key: null,
+        api_key_id: null
+      }
+    ];
+    saveUsersToDisk(_usuariosMem);
+  } else {
+    // Si ya existen usuarios, nos aseguramos de que el admin de ADMIN_USER exista y tenga su rol
+    const uAdmin = _usuariosMem.find(u => u.username.toLowerCase() === adminUser.toLowerCase());
+    if (uAdmin) {
+      if (uAdmin.role !== 'SUPERADMIN') {
+        uAdmin.role = 'SUPERADMIN';
+        saveUsersToDisk(_usuariosMem);
+      }
+    } else {
+      const maxId = _usuariosMem.reduce((max, u) => Math.max(max, u.id || 0), 0);
+      _usuariosMem.push({
+        id: maxId + 1,
+        username: adminUser,
+        password_hash: hashPassword(adminPass),
+        name: 'Administrador Principal',
+        email: 'admin@superfood.com',
+        role: 'SUPERADMIN',
+        active: 1,
+        created_at: new Date().toISOString(),
+        api_key: null,
+        api_key_id: null
+      });
+      saveUsersToDisk(_usuariosMem);
+    }
+  }
+}
+
+initUsuarios();
 
 const usuarios = {
-  byUsername: (u) => db.prepare('SELECT * FROM usuarios WHERE username = ?').get(u),
-  byId: (id) => db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id),
-  list: () => db.prepare('SELECT id, username, name, email, role, active, created_at, api_key, api_key_id FROM usuarios ORDER BY created_at ASC').all(),
-  create: (u) => db.prepare('INSERT INTO usuarios (username, password_hash, name, email, role, active) VALUES (@username,@password_hash,@name,@email,@role,@active)').run(u),
-  update: (id, u) => db.prepare('UPDATE usuarios SET username=@username, name=@name, email=@email, role=@role, active=@active WHERE id=@id').run({ ...u, id }),
-  setPassword: (id, hash) => db.prepare('UPDATE usuarios SET password_hash=? WHERE id=?').run(hash, id),
-  setApiKey: (id, apiKeyId, apiKey) => db.prepare('UPDATE usuarios SET api_key_id=?, api_key=? WHERE id=?').run(apiKeyId, apiKey, id),
-  remove: (id) => db.prepare('DELETE FROM usuarios WHERE id=?').run(id),
-};
-
-// Promueve al usuario configurado en ADMIN_USER a SUPERADMIN (una sola vez,
-// idempotente). Cubre instalaciones que ya existían antes de este rol —
-// como la tuya, con "owen" ya creado como ADMIN normal.
-try {
-  const nombreSuperadmin = process.env.ADMIN_USER || 'admin';
-  const filaSuperadmin = usuarios.byUsername(nombreSuperadmin);
-  if (filaSuperadmin && filaSuperadmin.role !== 'SUPERADMIN') {
-    db.prepare("UPDATE usuarios SET role = 'SUPERADMIN' WHERE id = ?").run(filaSuperadmin.id);
-    console.log(`[usuarios] "${nombreSuperadmin}" promovido a SUPERADMIN (cuenta permanente).`);
+  byUsername: (u) => {
+    if (!u) return null;
+    const target = String(u).trim().toLowerCase();
+    return _usuariosMem.find(x => x.username.toLowerCase() === target) || null;
+  },
+  byId: (id) => {
+    const numId = parseInt(id, 10);
+    return _usuariosMem.find(x => x.id === numId) || null;
+  },
+  list: () => {
+    return [..._usuariosMem].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  },
+  create: (u) => {
+    const maxId = _usuariosMem.reduce((max, x) => Math.max(max, x.id || 0), 0);
+    const nuevo = {
+      id: maxId + 1,
+      username: u.username,
+      password_hash: u.password_hash,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      active: u.active,
+      created_at: new Date().toISOString(),
+      api_key: null,
+      api_key_id: null
+    };
+    _usuariosMem.push(nuevo);
+    saveUsersToDisk(_usuariosMem);
+    return nuevo;
+  },
+  update: (id, u) => {
+    const numId = parseInt(id, 10);
+    const index = _usuariosMem.findIndex(x => x.id === numId);
+    if (index === -1) return;
+    _usuariosMem[index] = {
+      ..._usuariosMem[index],
+      username: u.username,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      active: u.active
+    };
+    saveUsersToDisk(_usuariosMem);
+  },
+  setPassword: (id, hash) => {
+    const numId = parseInt(id, 10);
+    const user = _usuariosMem.find(x => x.id === numId);
+    if (user) {
+      user.password_hash = hash;
+      saveUsersToDisk(_usuariosMem);
+    }
+  },
+  setApiKey: (id, apiKeyId, apiKey) => {
+    const numId = parseInt(id, 10);
+    const user = _usuariosMem.find(x => x.id === numId);
+    if (user) {
+      user.api_key_id = apiKeyId;
+      user.api_key = apiKey;
+      saveUsersToDisk(_usuariosMem);
+    }
+  },
+  remove: (id) => {
+    const numId = parseInt(id, 10);
+    _usuariosMem = _usuariosMem.filter(x => x.id !== numId);
+    saveUsersToDisk(_usuariosMem);
   }
-} catch (e) { /* noop */ }
+};
 
 /** ¿Este rol tiene permisos de administrador (gestionar usuarios, etc.)? */
 function esRolAdmin(role) {
@@ -111,37 +195,27 @@ function esRolAdmin(role) {
 
 // ─────────────── API key personal (una por usuario, vive en el backend) ───────────────
 async function crearApiKeyEnBackend(etiqueta) {
-  const r = await fetch(`${BACKEND}/admin/api-keys`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': ADMIN_KEY },
-    body: JSON.stringify({ etiqueta }),
-  });
-  if (!r.ok) throw new Error('No se pudo generar la API key en el backend.');
-  return r.json(); // { id, clave, etiqueta }
+  if (!ADMIN_KEY) return { id: null, clave: null, etiqueta };
+  try {
+    const r = await fetch(`${BACKEND}/admin/api-keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ADMIN_KEY },
+      body: JSON.stringify({ etiqueta }),
+    });
+    if (!r.ok) return { id: null, clave: null, etiqueta };
+    return r.json();
+  } catch {
+    return { id: null, clave: null, etiqueta };
+  }
 }
 async function revocarApiKeyEnBackend(id) {
-  if (!id) return;
+  if (!id || !ADMIN_KEY) return;
   await fetch(`${BACKEND}/admin/api-keys/${id}`, { method: 'DELETE', headers: { 'x-api-key': ADMIN_KEY } }).catch(() => {});
 }
 
-// Migración retroactiva: usuarios que ya existían antes de esta función (o que
-// por algún motivo se quedaron sin key) reciben una al arrancar el servidor.
-(async () => {
-  const sinKey = db.prepare('SELECT id, username FROM usuarios WHERE api_key IS NULL').all();
-  for (const u of sinKey) {
-    try {
-      const { id, clave } = await crearApiKeyEnBackend(u.username);
-      usuarios.setApiKey(u.id, id, clave);
-      console.log(`[api-keys] Generada para "${u.username}".`);
-    } catch (e) {
-      console.warn(`[api-keys] No se pudo generar para "${u.username}" (¿backend caído?):`, e.message);
-    }
-  }
-})();
-
 /** Cuántos administradores activos quedan (protege contra quedarse sin forma de entrar). */
 function contarAdminsActivos() {
-  return db.prepare("SELECT COUNT(*) AS n FROM usuarios WHERE role IN ('ADMIN','SUPERADMIN') AND active = 1").get().n;
+  return _usuariosMem.filter(u => (u.role === 'ADMIN' || u.role === 'SUPERADMIN') && u.active === 1).length;
 }
 
 function publicUser(row) {
