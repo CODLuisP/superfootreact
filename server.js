@@ -346,7 +346,10 @@ app.get('/api/products', requireAuth, async (req, res) => {
 
     const path = status === 'pendiente' ? `/admin/pendientes?${qs}` : `/admin/productos?${qs}`;
     const r = await backend(path, {});
-    const data = await r.json();
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
+    }
     const mapper = status === 'pendiente' ? pendienteToProduct : masterToProduct;
     res.json({
       items: (data.items || []).map(mapper),
@@ -368,8 +371,11 @@ app.get('/api/products/counts', requireAuth, async (_req, res) => {
       backend('/admin/productos?limit=1', {}),
       backend('/admin/pendientes?limit=1', {}),
     ]);
-    const m = await mRes.json();
-    const p = await pRes.json();
+    const m = await mRes.json().catch(() => ({}));
+    const p = await pRes.json().catch(() => ({}));
+    if (!mRes.ok || !pRes.ok) {
+      return res.json({ total: 0, pending: 0 });
+    }
     res.json({ total: m.total ?? 0, pending: p.total ?? 0 });
   } catch (e) { res.status(502).json({ error: 'No se pudo leer los totales: ' + e.message }); }
 });
@@ -381,12 +387,14 @@ app.post('/api/products', requireAuth, async (req, res) => {
     const imagenUrl = await resolverImagen(code, image);
     if (status === 'pendiente') {
       const r = await backend('/admin/pendientes', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl, origen: req.session.username } });
-      if (r.status === 409) return res.status(409).json({ error: 'Ese código ya existe en el catálogo maestro.' });
-      if (!r.ok) return res.status(502).json({ error: 'Error del backend.' });
+      const data = await r.json().catch(() => ({}));
+      if (r.status === 409) return res.status(409).json({ error: data.error || 'Ese código ya existe en el catálogo maestro.' });
+      if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
       return res.status(201).json({ product: { id: code, code, name, image: imagenUrl || '', status: 'pendiente', createdBy: req.session.username, createdAt: new Date().toISOString() } });
     }
     const r = await backend('/admin/productos', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl } });
-    if (!r.ok) return res.status(502).json({ error: 'Error del backend.' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
     res.status(201).json({ product: { id: code, code, name, image: imagenUrl || '', status: 'aprobado', createdAt: new Date().toISOString() } });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -399,12 +407,14 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
     if (status === 'pendiente') {
       // Upsert en pendientes (el backend hace ON CONFLICT UPDATE).
       const r = await backend('/admin/pendientes', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl, origen: req.session.username } });
-      if (!r.ok && r.status !== 409) return res.status(502).json({ error: 'Error del backend.' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok && r.status !== 409) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
       return res.json({ product: { id: code, code, name, image: imagenUrl || '', status: 'pendiente' } });
     }
     const r = await backend(`/admin/productos/${encodeURIComponent(code)}`, { method: 'PUT', body: { nombre: name, imagenUrl } });
-    if (r.status === 404) return res.status(404).json({ error: 'Producto no encontrado.' });
-    if (!r.ok) return res.status(502).json({ error: 'Error del backend.' });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 404) return res.status(404).json({ error: data.error || 'Producto no encontrado.' });
+    if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
     res.json({ product: { id: code, code, name, image: imagenUrl || '', status: 'aprobado' } });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -415,13 +425,15 @@ app.delete('/api/products/:code', requireAuth, async (req, res) => {
   const route = status === 'pendiente' ? `/admin/pendientes/${encodeURIComponent(code)}` : `/admin/productos/${encodeURIComponent(code)}`;
   const r = await backend(route, { method: 'DELETE' });
   await borrarImagen(code); // limpia la imagen en Cloudflare
-  if (!r.ok && r.status !== 404) return res.status(502).json({ error: 'Error del backend.' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok && r.status !== 404) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
   res.json({ ok: true });
 });
 
 app.post('/api/products/:code/approve', requireAuth, async (req, res) => {
   const r = await backend(`/admin/pendientes/${encodeURIComponent(req.params.code)}/aprobar`, { method: 'POST' });
-  if (!r.ok) return res.status(502).json({ error: 'No se pudo aprobar.' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) return res.status(r.status || 502).json({ error: data.error || 'No se pudo aprobar.' });
   res.json({ ok: true });
 });
 
