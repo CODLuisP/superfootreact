@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { api } from '../services/api';
-import { Leaf, Lock, User as UserIcon, AlertCircle, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
+import { Lock, User as UserIcon, AlertCircle, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
 
 interface LoginViewProps {
   onLoginSuccess: (user: User) => void;
@@ -40,9 +40,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       <div className="w-full max-w-md">
         {/* Header Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 mb-3">
-            <Leaf className="h-8 w-8 stroke-[2.5]" />
-          </div>
+          <img
+            src="/food.png"
+            alt="Superfood Logo"
+            className="inline-block h-16 w-16 object-contain mb-3"
+          />
           <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">
             Superfood
           </h1>

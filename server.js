@@ -3,8 +3,9 @@
  *
  * - Sirve las APIs bajo /api (login/sesión, usuarios, productos, subida de imagen).
  * - Guarda las CREDENCIALES del .env del lado del SERVIDOR (nunca llegan al navegador):
- *     CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, CATALOGO_API_KEY, etc.
- * - Hace de proxy al backend de catálogo (superfood) añadiendo las API keys.
+ *     CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, CATALOGO_ADMIN_KEY, etc.
+ * - Hace de proxy al backend de catálogo (superfood) usando siempre la ADMIN_API_KEY
+ *   (el BFF actúa como el panel, no en nombre de un usuario externo).
  * - En producción sirve el build estático de Vite (dist/).
  *
  * En desarrollo, Vite (puerto 3000) hace proxy de /api → este server (8787),
@@ -22,7 +23,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = process.env.PORT || 8787;
 const BACKEND = (process.env.CATALOGO_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
-const API_KEY = process.env.CATALOGO_API_KEY || '';
 const ADMIN_KEY = process.env.CATALOGO_ADMIN_KEY || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-insecure-secret-cambiame';
 
@@ -47,6 +47,12 @@ db.exec(`
     created_at    TEXT DEFAULT CURRENT_TIMESTAMP
   );
 `);
+// Migración suave: columnas para la API key personal de cada usuario (se
+// generan en el backend de catálogo y se guardan aquí junto al usuario).
+for (const [col, tipo] of [['api_key', 'TEXT'], ['api_key_id', 'INTEGER']]) {
+  const existe = db.prepare('PRAGMA table_info(usuarios)').all().some((c) => c.name === col);
+  if (!existe) db.exec(`ALTER TABLE usuarios ADD COLUMN ${col} ${tipo}`);
+}
 
 // ─────────────── Contraseñas (scrypt) ───────────────
 function hashPassword(pw) {
@@ -63,34 +69,83 @@ function verifyPassword(pw, stored) {
   return expected.length === dk.length && crypto.timingSafeEqual(expected, dk);
 }
 
-// Siembra: admin/admin (ADMIN) y operador/operador (OPERADOR) si está vacía.
+// Siembra: el usuario de ADMIN_USER nace como SUPERADMIN (cuenta permanente,
+// indestructible) y operador/operador como OPERADOR normal, si la tabla está vacía.
 try {
   const n = db.prepare('SELECT COUNT(*) AS n FROM usuarios').get().n;
   if (n === 0) {
     const seed = db.prepare('INSERT INTO usuarios (username, password_hash, name, email, role, active) VALUES (?,?,?,?,?,1)');
-    seed.run(process.env.ADMIN_USER || 'admin', hashPassword(process.env.ADMIN_PASSWORD || 'admin'), 'Administrador Principal', 'admin@superfood.com', 'ADMIN');
+    seed.run(process.env.ADMIN_USER || 'admin', hashPassword(process.env.ADMIN_PASSWORD || 'admin'), 'Administrador Principal', 'admin@superfood.com', 'SUPERADMIN');
     seed.run('operador', hashPassword('operador'), 'Operador', 'operador@superfood.com', 'OPERADOR');
-    console.log('[usuarios] Sembrados admin/admin y operador/operador. Cámbialos en producción.');
+    console.log('[usuarios] Sembrados admin (SUPERADMIN) y operador/operador. Cámbialos en producción.');
   }
 } catch (e) { /* carrera al sembrar: ignorar */ }
 
 const usuarios = {
   byUsername: (u) => db.prepare('SELECT * FROM usuarios WHERE username = ?').get(u),
   byId: (id) => db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id),
-  list: () => db.prepare('SELECT id, username, name, email, role, active, created_at FROM usuarios ORDER BY created_at ASC').all(),
+  list: () => db.prepare('SELECT id, username, name, email, role, active, created_at, api_key, api_key_id FROM usuarios ORDER BY created_at ASC').all(),
   create: (u) => db.prepare('INSERT INTO usuarios (username, password_hash, name, email, role, active) VALUES (@username,@password_hash,@name,@email,@role,@active)').run(u),
   update: (id, u) => db.prepare('UPDATE usuarios SET username=@username, name=@name, email=@email, role=@role, active=@active WHERE id=@id').run({ ...u, id }),
   setPassword: (id, hash) => db.prepare('UPDATE usuarios SET password_hash=? WHERE id=?').run(hash, id),
+  setApiKey: (id, apiKeyId, apiKey) => db.prepare('UPDATE usuarios SET api_key_id=?, api_key=? WHERE id=?').run(apiKeyId, apiKey, id),
   remove: (id) => db.prepare('DELETE FROM usuarios WHERE id=?').run(id),
 };
 
+// Promueve al usuario configurado en ADMIN_USER a SUPERADMIN (una sola vez,
+// idempotente). Cubre instalaciones que ya existían antes de este rol —
+// como la tuya, con "owen" ya creado como ADMIN normal.
+try {
+  const nombreSuperadmin = process.env.ADMIN_USER || 'admin';
+  const filaSuperadmin = usuarios.byUsername(nombreSuperadmin);
+  if (filaSuperadmin && filaSuperadmin.role !== 'SUPERADMIN') {
+    db.prepare("UPDATE usuarios SET role = 'SUPERADMIN' WHERE id = ?").run(filaSuperadmin.id);
+    console.log(`[usuarios] "${nombreSuperadmin}" promovido a SUPERADMIN (cuenta permanente).`);
+  }
+} catch (e) { /* noop */ }
+
+/** ¿Este rol tiene permisos de administrador (gestionar usuarios, etc.)? */
+function esRolAdmin(role) {
+  return role === 'ADMIN' || role === 'SUPERADMIN';
+}
+
+// ─────────────── API key personal (una por usuario, vive en el backend) ───────────────
+async function crearApiKeyEnBackend(etiqueta) {
+  const r = await fetch(`${BACKEND}/admin/api-keys`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': ADMIN_KEY },
+    body: JSON.stringify({ etiqueta }),
+  });
+  if (!r.ok) throw new Error('No se pudo generar la API key en el backend.');
+  return r.json(); // { id, clave, etiqueta }
+}
+async function revocarApiKeyEnBackend(id) {
+  if (!id) return;
+  await fetch(`${BACKEND}/admin/api-keys/${id}`, { method: 'DELETE', headers: { 'x-api-key': ADMIN_KEY } }).catch(() => {});
+}
+
+// Migración retroactiva: usuarios que ya existían antes de esta función (o que
+// por algún motivo se quedaron sin key) reciben una al arrancar el servidor.
+(async () => {
+  const sinKey = db.prepare('SELECT id, username FROM usuarios WHERE api_key IS NULL').all();
+  for (const u of sinKey) {
+    try {
+      const { id, clave } = await crearApiKeyEnBackend(u.username);
+      usuarios.setApiKey(u.id, id, clave);
+      console.log(`[api-keys] Generada para "${u.username}".`);
+    } catch (e) {
+      console.warn(`[api-keys] No se pudo generar para "${u.username}" (¿backend caído?):`, e.message);
+    }
+  }
+})();
+
 /** Cuántos administradores activos quedan (protege contra quedarse sin forma de entrar). */
 function contarAdminsActivos() {
-  return db.prepare("SELECT COUNT(*) AS n FROM usuarios WHERE role = 'ADMIN' AND active = 1").get().n;
+  return db.prepare("SELECT COUNT(*) AS n FROM usuarios WHERE role IN ('ADMIN','SUPERADMIN') AND active = 1").get().n;
 }
 
 function publicUser(row) {
-  return { id: String(row.id), username: row.username, name: row.name || row.username, email: row.email || '', role: row.role, active: row.active !== 0, createdAt: row.created_at || new Date().toISOString() };
+  return { id: String(row.id), username: row.username, name: row.name || row.username, email: row.email || '', role: row.role, active: row.active !== 0, createdAt: row.created_at || new Date().toISOString(), apiKey: row.api_key || null };
 }
 
 // ─────────────── Sesión (cookie firmada HMAC) ───────────────
@@ -127,13 +182,17 @@ function setCookie(res, payload) {
 }
 function clearCookie(res) { res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`); }
 function requireAuth(req, res, next) { if (!req.session) return res.status(401).json({ error: 'No autenticado.' }); next(); }
-function requireAdmin(req, res, next) { if (!req.session) return res.status(401).json({ error: 'No autenticado.' }); if (req.session.role !== 'ADMIN') return res.status(403).json({ error: 'Requiere rol ADMIN.' }); next(); }
+function requireAdmin(req, res, next) { if (!req.session) return res.status(401).json({ error: 'No autenticado.' }); if (!esRolAdmin(req.session.role)) return res.status(403).json({ error: 'Requiere rol ADMIN.' }); next(); }
 
 // ─────────────── Backend proxy helper ───────────────
-async function backend(pathname, { admin = false, method = 'GET', body } = {}) {
+// El BFF siempre actúa como el panel (nunca en nombre de un usuario externo),
+// así que toda llamada al backend usa la ADMIN_API_KEY. Las API keys por
+// usuario son para que sistemas EXTERNOS (POS, etc.) consuman /productos/*
+// directo, sin pasar por este panel.
+async function backend(pathname, { method = 'GET', body } = {}) {
   return fetch(`${BACKEND}${pathname}`, {
     method,
-    headers: { 'Content-Type': 'application/json', 'x-api-key': admin ? ADMIN_KEY : API_KEY },
+    headers: { 'Content-Type': 'application/json', 'x-api-key': ADMIN_KEY },
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -212,7 +271,7 @@ app.get('/api/products', requireAuth, async (req, res) => {
     if (req.query.offset) qs.set('offset', String(req.query.offset));
 
     const path = status === 'pendiente' ? `/admin/pendientes?${qs}` : `/admin/productos?${qs}`;
-    const r = await backend(path, { admin: true });
+    const r = await backend(path, {});
     const data = await r.json();
     const mapper = status === 'pendiente' ? pendienteToProduct : masterToProduct;
     res.json({
@@ -232,8 +291,8 @@ app.get('/api/products', requireAuth, async (req, res) => {
 app.get('/api/products/counts', requireAuth, async (_req, res) => {
   try {
     const [mRes, pRes] = await Promise.all([
-      backend('/admin/productos?limit=1', { admin: true }),
-      backend('/admin/pendientes?limit=1', { admin: true }),
+      backend('/admin/productos?limit=1', {}),
+      backend('/admin/pendientes?limit=1', {}),
     ]);
     const m = await mRes.json();
     const p = await pRes.json();
@@ -247,12 +306,12 @@ app.post('/api/products', requireAuth, async (req, res) => {
     if (!code || !name) return res.status(400).json({ error: 'Código y nombre son obligatorios.' });
     const imagenUrl = await resolverImagen(code, image);
     if (status === 'pendiente') {
-      const r = await backend('/productos', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl, origen: req.session.username } });
+      const r = await backend('/admin/pendientes', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl, origen: req.session.username } });
       if (r.status === 409) return res.status(409).json({ error: 'Ese código ya existe en el catálogo maestro.' });
       if (!r.ok) return res.status(502).json({ error: 'Error del backend.' });
       return res.status(201).json({ product: { id: code, code, name, image: imagenUrl || '', status: 'pendiente', createdBy: req.session.username, createdAt: new Date().toISOString() } });
     }
-    const r = await backend('/admin/productos', { admin: true, method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl } });
+    const r = await backend('/admin/productos', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl } });
     if (!r.ok) return res.status(502).json({ error: 'Error del backend.' });
     res.status(201).json({ product: { id: code, code, name, image: imagenUrl || '', status: 'aprobado', createdAt: new Date().toISOString() } });
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -265,11 +324,11 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
     const imagenUrl = await resolverImagen(code, image);
     if (status === 'pendiente') {
       // Upsert en pendientes (el backend hace ON CONFLICT UPDATE).
-      const r = await backend('/productos', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl, origen: req.session.username } });
+      const r = await backend('/admin/pendientes', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl, origen: req.session.username } });
       if (!r.ok && r.status !== 409) return res.status(502).json({ error: 'Error del backend.' });
       return res.json({ product: { id: code, code, name, image: imagenUrl || '', status: 'pendiente' } });
     }
-    const r = await backend(`/admin/productos/${encodeURIComponent(code)}`, { admin: true, method: 'PUT', body: { nombre: name, imagenUrl } });
+    const r = await backend(`/admin/productos/${encodeURIComponent(code)}`, { method: 'PUT', body: { nombre: name, imagenUrl } });
     if (r.status === 404) return res.status(404).json({ error: 'Producto no encontrado.' });
     if (!r.ok) return res.status(502).json({ error: 'Error del backend.' });
     res.json({ product: { id: code, code, name, image: imagenUrl || '', status: 'aprobado' } });
@@ -280,14 +339,14 @@ app.delete('/api/products/:code', requireAuth, async (req, res) => {
   const code = req.params.code;
   const status = req.query.status;
   const route = status === 'pendiente' ? `/admin/pendientes/${encodeURIComponent(code)}` : `/admin/productos/${encodeURIComponent(code)}`;
-  const r = await backend(route, { admin: true, method: 'DELETE' });
+  const r = await backend(route, { method: 'DELETE' });
   await borrarImagen(code); // limpia la imagen en Cloudflare
   if (!r.ok && r.status !== 404) return res.status(502).json({ error: 'Error del backend.' });
   res.json({ ok: true });
 });
 
 app.post('/api/products/:code/approve', requireAuth, async (req, res) => {
-  const r = await backend(`/admin/pendientes/${encodeURIComponent(req.params.code)}/aprobar`, { admin: true, method: 'POST' });
+  const r = await backend(`/admin/pendientes/${encodeURIComponent(req.params.code)}/aprobar`, { method: 'POST' });
   if (!r.ok) return res.status(502).json({ error: 'No se pudo aprobar.' });
   res.json({ ok: true });
 });
@@ -311,7 +370,7 @@ app.post('/api/products/bulk', requireAuth, async (req, res) => {
   for (let i = 0; i < items.length; i += LOTE) {
     const bloque = items.slice(i, i + LOTE);
     try {
-      const r = await backend('/admin/productos/bulk', { admin: true, method: 'POST', body: { items: bloque } });
+      const r = await backend('/admin/productos/bulk', { method: 'POST', body: { items: bloque } });
       const data = await r.json();
       if (!r.ok) {
         errores.push({ fila: i, error: data.error || 'Error del backend.' });
@@ -331,14 +390,21 @@ app.post('/api/products/bulk', requireAuth, async (req, res) => {
 // ─────────────── Rutas de usuarios (admin) ───────────────
 app.get('/api/users', requireAdmin, (_req, res) => res.json({ items: usuarios.list().map(publicUser) }));
 
-app.post('/api/users', requireAdmin, (req, res) => {
+app.post('/api/users', requireAdmin, async (req, res) => {
   const { username, password, name, email, role, active } = req.body || {};
   const user = String(username || '').trim();
   if (user.length < 3) return res.status(400).json({ error: 'Usuario: mínimo 3 caracteres.' });
   if (String(password || '').length < 4) return res.status(400).json({ error: 'Contraseña: mínimo 4 caracteres.' });
   if (usuarios.byUsername(user)) return res.status(409).json({ error: 'Ese usuario ya existe.' });
   usuarios.create({ username: user, password_hash: hashPassword(String(password)), name: name || user, email: email || null, role: role === 'ADMIN' ? 'ADMIN' : 'OPERADOR', active: active === false ? 0 : 1 });
-  res.status(201).json({ user: publicUser(usuarios.byUsername(user)) });
+  const row = usuarios.byUsername(user);
+  try {
+    const { id: apiKeyId, clave } = await crearApiKeyEnBackend(user);
+    usuarios.setApiKey(row.id, apiKeyId, clave);
+  } catch (e) {
+    console.warn(`[api-keys] No se pudo generar para "${user}" al crearlo:`, e.message);
+  }
+  res.status(201).json({ user: publicUser(usuarios.byId(row.id)) });
 });
 
 app.put('/api/users/:id', requireAdmin, (req, res) => {
@@ -350,8 +416,12 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
   const dup = usuarios.byUsername(newUser);
   if (dup && dup.id !== id) return res.status(409).json({ error: 'Ese usuario ya existe.' });
 
-  const nuevoRole = role === 'ADMIN' ? 'ADMIN' : 'OPERADOR';
-  const nuevoActive = active === false ? 0 : 1;
+  const esSuperadmin = row.role === 'SUPERADMIN';
+  // El superadmin es intocable en rol/estado: siempre queda SUPERADMIN y activo,
+  // sin importar qué se haya enviado (puede seguir cambiando usuario/nombre/contraseña).
+  const nuevoRole = esSuperadmin ? 'SUPERADMIN' : (role === 'ADMIN' ? 'ADMIN' : 'OPERADOR');
+  const nuevoActive = esSuperadmin ? 1 : (active === false ? 0 : 1);
+
   const dejaDeSerAdminActivo = row.role === 'ADMIN' && row.active === 1 && (nuevoRole !== 'ADMIN' || nuevoActive === 0);
   if (dejaDeSerAdminActivo && contarAdminsActivos() <= 1) {
     return res.status(400).json({ error: 'Es el último administrador activo: no puedes quitarle el rol admin ni desactivarlo. Crea otro admin primero.' });
@@ -362,16 +432,35 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
   res.json({ user: publicUser(usuarios.byId(id)) });
 });
 
-app.delete('/api/users/:id', requireAdmin, (req, res) => {
+app.delete('/api/users/:id', requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const row = usuarios.byId(id);
   if (!row) return res.status(404).json({ error: 'Usuario no encontrado.' });
+  if (row.role === 'SUPERADMIN') {
+    return res.status(400).json({ error: 'El superadministrador no se puede eliminar.' });
+  }
   if (row.username === req.session.username) return res.status(400).json({ error: 'No puedes eliminar tu propia cuenta.' });
   if (row.role === 'ADMIN' && row.active === 1 && contarAdminsActivos() <= 1) {
     return res.status(400).json({ error: 'Es el último administrador activo: no se puede eliminar. Crea otro admin primero.' });
   }
+  await revocarApiKeyEnBackend(row.api_key_id);
   usuarios.remove(id);
   res.json({ ok: true });
+});
+
+/** POST /api/users/:id/regenerate-key → revoca la key vieja (si había) y crea una nueva. */
+app.post('/api/users/:id/regenerate-key', requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const row = usuarios.byId(id);
+  if (!row) return res.status(404).json({ error: 'Usuario no encontrado.' });
+  try {
+    await revocarApiKeyEnBackend(row.api_key_id);
+    const { id: apiKeyId, clave } = await crearApiKeyEnBackend(row.username);
+    usuarios.setApiKey(id, apiKeyId, clave);
+    res.json({ user: publicUser(usuarios.byId(id)) });
+  } catch (e) {
+    res.status(502).json({ error: 'No se pudo regenerar la API key: ' + e.message });
+  }
 });
 
 // ─────────────── Estáticos en producción ───────────────

@@ -1,69 +1,73 @@
-# Superfood — Panel (Vite + React) con BFF
+# Superfood — Panel (Vite + React + BFF)
 
-Panel web para cargar y gestionar el catálogo Superfood. UI en React + Tailwind
-y un pequeño **servidor BFF (Express)** que guarda los secretos del lado del
-servidor (Cloudflare / API keys) y hace de proxy al backend `superfood`.
+Panel web para cargar, buscar, editar e importar el catálogo Superfood.
+UI en React + Tailwind, con un servidor **BFF (Backend-For-Frontend, Express)**
+que guarda todos los secretos del lado del servidor (nunca llegan al
+navegador) y hace de proxy al backend `superfood`.
 
 ## Arquitectura
-
 ```
-Navegador ──▶ Vite (3000)  ──/api──▶  BFF Express (8787)  ──▶  backend superfood (4000) ──▶ SQLite
-                                          │  guarda .env: CLOUDFLARE_*, CATALOGO_*, SESSION_SECRET
-                                          └─ usuarios propios (SQLite) + sesión (cookie HttpOnly)
+Navegador ──▶ Vite (3000) ──/api──▶ BFF Express (8787) ──▶ backend superfood (4000) ──▶ SQLite
+                                        │ .env: CLOUDFLARE_*, CATALOGO_*, SESSION_SECRET
+                                        └ usuarios propios (SQLite, data/usuarios.db) + sesión (cookie HttpOnly)
 ```
-
-Las credenciales viven **solo** en el `.env` que lee `server.js` (nunca llegan
-al navegador). El SPA solo habla con `/api`.
-
-## Requisitos
-- Node.js 18+.
-- El **backend** `superfood` corriendo (por defecto en `http://localhost:4000`):
-  ```bash
-  cd ../Desktop/superfood && npm start
-  ```
+El navegador solo habla con `/api` usando la **cookie de sesión** (login). El
+BFF es el único que conoce las API keys del backend y el token de Cloudflare.
 
 ## Puesta en marcha
 ```bash
 npm install
-cp .env.example .env    # PowerShell: copy .env.example .env
+cp .env.example .env    # rellena CLOUDFLARE_*, CATALOGO_*, SESSION_SECRET, ADMIN_USER/PASSWORD
+npm run dev             # levanta Vite + BFF juntos → http://localhost:3000
 ```
-Rellena `.env`:
-- `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` → subir imágenes.
-- `CATALOGO_API_URL` / `CATALOGO_API_KEY` / `CATALOGO_ADMIN_KEY` → deben
-  coincidir con el `.env` del backend.
-- `SESSION_SECRET` → secreto largo y aleatorio.
-- `ADMIN_USER` / `ADMIN_PASSWORD` → admin inicial (se crea la primera vez).
+El **backend** `superfood` debe estar corriendo en paralelo (`http://localhost:4000`
+por defecto). Entra con el `ADMIN_USER`/`ADMIN_PASSWORD` que hayas puesto (se
+crea solo la primera vez que arranca, si la tabla de usuarios está vacía).
 
-Arranca las dos piezas del panel con un solo comando (Vite + BFF juntos):
-```bash
-npm run dev
-```
-Abre **http://localhost:3000**. Entra con **admin / admin** (o el ADMIN_PASSWORD
-que pongas). También hay un seed `operador / operador`.
+**Producción:** `npm run build` (genera `dist/`) y luego `npm start`
+(`NODE_ENV=production node server.js`, sirve la app + `/api` en un solo proceso).
 
-> Cambia admin/operador y `SESSION_SECRET` antes de producción.
+## Qué incluye cada sección
 
-## Producción
-```bash
-npm run build     # genera dist/
-npm start         # server.js sirve dist/ + /api en un puerto (NODE_ENV=production)
-```
+**Cargar** — sube foto (archivo, arrastrar o `Ctrl+V`), código por cámara
+(escáner web) o **lector USB físico** (funciona escribiendo desde cualquier
+campo del formulario, detecta el tecleo ultra-rápido del lector y lo dirige
+solo al campo de código, aunque el foco esté en "Nombre"). Guarda directo en
+el catálogo (o como "pendiente" si se marca así).
 
-## Qué se conectó a la API
-- **Login/usuarios**: reales (cookie de sesión firmada, contraseñas scrypt).
-  Solo el rol **ADMIN** ve/gestiona usuarios.
-- **Cargar**: sube imagen a Cloudflare (id = código de barras) y guarda en el
-  catálogo. El estado *Aprobado* → maestro; *Pendiente* → cola de revisión.
-- **Gestionar**: búsqueda (FTS5 del backend), editar (nombre/imagen), eliminar.
-- **Pendientes**: aprobar / descartar / subir foto rápida.
+**Gestionar** — búsqueda instantánea (FTS5 del backend) con **paginación real**
+(24 productos por página, salto directo a cualquier página — nunca carga el
+catálogo completo en memoria, funciona igual con 100 o con 100,000 productos).
+Editar, eliminar, y:
+- **Exportar** a CSV / Excel (.xlsx con estilo corporativo) / PDF (tablas
+  paginadas con encabezado de marca) — respeta la búsqueda activa, trae los
+  datos en bloques para no saturar memoria, y las librerías pesadas (ExcelJS,
+  jsPDF) se cargan solo al usarlas (no inflan la carga inicial del panel).
+- **Importar Excel**: plantilla descargable (Código de Barras / Nombre /
+  URL de Imagen), detecta las columnas por su encabezado (no por posición ni
+  orden), valida fila por fila con vista previa de errores, e importa en lotes
+  (1 transacción por cada 1000 filas en el backend — miles de productos en
+  menos de un segundo).
 
-## Simplificaciones respecto a la maqueta original
-- Se quitaron **categoría, precio, stock y descripción** (el backend maneja solo
-  código de barras + nombre + imagen).
-- El código de barras **no se edita** (es la clave del producto).
-- Se quitó el "usar cuenta / cambiar a admin" (con login real no hay
-  suplantación); los accesos rápidos hacen login real con las cuentas sembradas.
+**Pendientes** — cola de revisión de lo que registran otros sistemas: aprobar,
+descartar, completar imagen, todo paginado y con búsqueda.
+
+**Usuarios** *(solo rol ADMIN)* — crear/editar/eliminar cuentas (roles ADMIN /
+OPERADOR). Cada usuario tiene su propia **API key** (generada automáticamente
+al crearlo) visible ahí mismo con botón de copiar y de regenerar — es la clave
+que ese usuario (o el sistema que integre a nombre suyo) usa para consumir la
+API pública del backend directamente. Protección incorporada: **no se puede
+eliminar ni degradar al último administrador activo** (para no quedar sin
+acceso al panel).
+
+## Seguridad
+- Contraseñas con **scrypt**; sesión en cookie **HttpOnly** firmada (HMAC).
+- Las API keys personales se generan en el backend y se guardan también en la
+  base de usuarios del panel para mostrarlas; se revocan automáticamente al
+  eliminar la cuenta.
+- Nada de esto (contraseñas, API keys, tokens de Cloudflare) es accesible
+  desde el navegador: todo vive y se procesa en `server.js`.
 
 ## Notas
-- La BD de usuarios (`data/usuarios.db`) es de este panel, aparte del catálogo.
-- Si el build queda raro: borra `dist/` y `npm run build` otra vez.
+- La BD de usuarios (`data/usuarios.db`) es propia de este panel, separada del catálogo.
+- Si el build se comporta raro: borra `dist/` y corre `npm run build` de nuevo.

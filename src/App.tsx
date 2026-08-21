@@ -12,7 +12,6 @@ import { CargarView } from './views/CargarView';
 import { GestionarView } from './views/GestionarView';
 import { PendientesView } from './views/PendientesView';
 import { UsuariosView } from './views/UsuariosView';
-import { Leaf } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -57,11 +56,13 @@ export default function App() {
   if (booting) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 text-gray-500">
-        <div className="flex items-center gap-2 text-sm">
-          <div className="h-9 w-9 rounded-xl bg-emerald-600 flex items-center justify-center text-white animate-pulse">
-            <Leaf className="h-5 w-5" />
-          </div>
-          <span>Cargando…</span>
+        <div className="flex items-center gap-3 text-sm">
+          <img
+            src="/food.png"
+            alt="Superfood Logo"
+            className="h-10 w-10 object-contain animate-pulse"
+          />
+          <span className="font-medium text-gray-700">Cargando…</span>
         </div>
       </div>
     );

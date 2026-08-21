@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActiveTab, User } from '../types';
+import { ActiveTab, User, UserRole } from '../types';
 import {
   Upload,
   Layers,
@@ -8,10 +8,18 @@ import {
   LogOut,
   Menu,
   X,
-  Leaf,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  Crown,
 } from 'lucide-react';
+
+const esAdmin = (role: UserRole) => role === 'ADMIN' || role === 'SUPERADMIN';
+
+function badgeClasses(role: UserRole) {
+  if (role === 'SUPERADMIN') return 'bg-amber-100 text-amber-800';
+  if (role === 'ADMIN') return 'bg-emerald-100 text-emerald-800';
+  return 'bg-blue-100 text-blue-800';
+}
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -55,9 +63,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => setActiveTab('cargar')}
               className="flex items-center gap-2.5 group focus:outline-hidden"
             >
-              <div className="h-10 w-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform duration-200">
-                <Leaf className="h-5 w-5 stroke-[2.5]" />
-              </div>
+              <img
+                src="/food.png"
+                alt="Superfood Logo"
+                className="h-10 w-10 object-contain group-hover:scale-105 transition-transform duration-200"
+              />
               <div className="text-left">
                 <span className="text-xl font-extrabold tracking-tight text-gray-900 leading-none block">
                   Superfood
@@ -73,7 +83,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
-                const isRestricted = item.adminOnly && currentUser.role !== 'ADMIN';
+                const isRestricted = item.adminOnly && !esAdmin(currentUser.role);
 
                 return (
                   <button
@@ -127,7 +137,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200/80 text-xs text-gray-700"
             >
               <div className="flex items-center gap-1.5 font-medium">
-                {currentUser.role === 'ADMIN' ? (
+                {currentUser.role === 'SUPERADMIN' ? (
+                  <Crown className="h-4 w-4 text-amber-600" />
+                ) : currentUser.role === 'ADMIN' ? (
                   <ShieldCheck className="h-4 w-4 text-emerald-600" />
                 ) : (
                   <UserCheck className="h-4 w-4 text-blue-600" />
@@ -136,13 +148,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
 
               {/* Role badge */}
-              <span
-                className={`px-2 py-0.5 text-[10px] font-bold tracking-wider rounded-md uppercase ${
-                  currentUser.role === 'ADMIN'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-blue-100 text-blue-800'
-                }`}
-              >
+              <span className={`px-2 py-0.5 text-[10px] font-bold tracking-wider rounded-md uppercase ${badgeClasses(currentUser.role)}`}>
                 {currentUser.role}
               </span>
             </div>
@@ -180,13 +186,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="text-sm font-semibold text-gray-900">
                 {currentUser.username}
               </span>
-              <span
-                className={`px-2 py-0.5 text-[10px] font-bold rounded-md uppercase ${
-                  currentUser.role === 'ADMIN'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-blue-100 text-blue-800'
-                }`}
-              >
+              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md uppercase ${badgeClasses(currentUser.role)}`}>
                 {currentUser.role}
               </span>
             </div>

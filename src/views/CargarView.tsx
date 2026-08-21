@@ -238,10 +238,7 @@ export const CargarView: React.FC<CargarViewProps> = ({
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       {/* Page Header */}
       <div className="mb-8">
-        <div className="flex items-center gap-2 text-emerald-700 font-semibold text-xs uppercase tracking-wider mb-1">
-          <Sparkles className="h-4 w-4" />
-          <span>Nuevo Registro</span>
-        </div>
+      
         <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Cargar producto</h1>
         <p className="text-sm sm:text-base text-gray-600 mt-1 max-w-2xl">
           Sube la foto, escanea o escribe el código y el nombre. Se guarda en el catálogo.

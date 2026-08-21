@@ -83,4 +83,8 @@ export const api = {
     return d.user as User;
   },
   deleteUser: (id: string) => req(`/api/users/${id}`, { method: 'DELETE' }),
+  async regenerateApiKey(id: string): Promise<User> {
+    const d = await req(`/api/users/${id}/regenerate-key`, { method: 'POST' });
+    return d.user as User;
+  },
 };

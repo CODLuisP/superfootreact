@@ -1,4 +1,8 @@
-export type UserRole = 'ADMIN' | 'OPERADOR';
+// SUPERADMIN: mismos permisos que ADMIN, pero nunca se puede eliminar, desactivar
+// ni degradar (garantiza que siempre exista al menos una cuenta con acceso).
+// No es seleccionable al crear/editar usuarios; el backend lo asigna solo al
+// usuario configurado como ADMIN_USER.
+export type UserRole = 'ADMIN' | 'OPERADOR' | 'SUPERADMIN';
 
 export interface User {
   id: string;
@@ -9,6 +13,7 @@ export interface User {
   email?: string;
   createdAt: string;
   active: boolean;
+  apiKey?: string | null; // clave personal para consumir la API pública del backend
 }
 
 export type ProductStatus = 'aprobado' | 'pendiente';

@@ -2,8 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { User, UserRole } from '../types';
 import { api } from '../services/api';
 import {
-  UserPlus, ShieldCheck, UserCheck, Edit2, Trash2, CheckCircle2, XCircle, AlertCircle, ShieldAlert, Shield,
+  UserPlus, ShieldCheck, UserCheck, Edit2, Trash2, CheckCircle2, XCircle, AlertCircle, ShieldAlert, Shield, Key, Copy, Check, RefreshCw, Crown, Lock,
 } from 'lucide-react';
+
+function badgeClasses(role: UserRole) {
+  if (role === 'SUPERADMIN') return 'bg-amber-100 text-amber-800 border border-amber-200';
+  if (role === 'ADMIN') return 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+  return 'bg-blue-100 text-blue-800 border border-blue-200';
+}
+function avatarClasses(role: UserRole) {
+  if (role === 'SUPERADMIN') return 'bg-amber-100 text-amber-800';
+  if (role === 'ADMIN') return 'bg-emerald-100 text-emerald-800';
+  return 'bg-blue-100 text-blue-800';
+}
 
 interface UsuariosViewProps {
   currentUser: User;
@@ -14,13 +25,15 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ currentUser }) => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [regenerandoId, setRegenerandoId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<{ username: string; name: string; email: string; password: string; role: UserRole; active: boolean }>({
     username: '', name: '', email: '', password: '', role: 'OPERADOR', active: true,
   });
   const [formError, setFormError] = useState<string | null>(null);
 
-  const isAdmin = currentUser.role === 'ADMIN';
+  const isAdmin = currentUser.role === 'ADMIN' || currentUser.role === 'SUPERADMIN';
 
   const refreshUsers = async () => {
     try { setUsers(await api.getUsers()); } catch { setUsers([]); }
@@ -86,6 +99,30 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ currentUser }) => {
     }
   };
 
+  const handleCopyKey = async (user: User) => {
+    if (!user.apiKey) return;
+    try {
+      await navigator.clipboard.writeText(user.apiKey);
+      setCopiedId(user.id);
+      setTimeout(() => setCopiedId((prev) => (prev === user.id ? null : prev)), 2000);
+    } catch {
+      alert('No se pudo copiar. Selecciona y copia la clave manualmente.');
+    }
+  };
+
+  const handleRegenerateKey = async (user: User) => {
+    if (!confirm(`¿Regenerar la API key de "${user.username}"? La clave anterior dejará de funcionar de inmediato.`)) return;
+    setRegenerandoId(user.id);
+    try {
+      await api.regenerateApiKey(user.id);
+      await refreshUsers();
+    } catch (err) {
+      alert((err as Error).message || 'No se pudo regenerar la clave.');
+    } finally {
+      setRegenerandoId(null);
+    }
+  };
+
   if (!isAdmin) {
     return (
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -129,6 +166,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ currentUser }) => {
                 <th className="px-5 py-4">Correo</th>
                 <th className="px-5 py-4">Rol</th>
                 <th className="px-5 py-4">Estado</th>
+                <th className="px-5 py-4">API Key</th>
                 <th className="px-5 py-4">Registro</th>
                 <th className="px-5 py-4 text-right">Acciones</th>
               </tr>
@@ -140,7 +178,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ currentUser }) => {
                   <tr key={u.id} className={`hover:bg-gray-50/80 transition ${isCurrent ? 'bg-emerald-50/30' : ''}`}>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2.5">
-                        <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs ${u.role === 'ADMIN' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>{u.username.slice(0, 2).toUpperCase()}</div>
+                        <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs ${avatarClasses(u.role)}`}>{u.username.slice(0, 2).toUpperCase()}</div>
                         <div className="font-bold text-gray-900 flex items-center gap-1.5">
                           <span>{u.username}</span>
                           {isCurrent && <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-600 text-white font-normal">Tú</span>}
@@ -150,8 +188,8 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ currentUser }) => {
                     <td className="px-5 py-4 font-medium text-gray-900">{u.name}</td>
                     <td className="px-5 py-4 text-gray-500">{u.email || '—'}</td>
                     <td className="px-5 py-4">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider ${u.role === 'ADMIN' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}`}>
-                        {u.role === 'ADMIN' ? <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" /> : <UserCheck className="h-3.5 w-3.5 text-blue-700" />}
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider ${badgeClasses(u.role)}`}>
+                        {u.role === 'SUPERADMIN' ? <Crown className="h-3.5 w-3.5 text-amber-700" /> : u.role === 'ADMIN' ? <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" /> : <UserCheck className="h-3.5 w-3.5 text-blue-700" />}
                         <span>{u.role}</span>
                       </span>
                     </td>
@@ -162,11 +200,38 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ currentUser }) => {
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-400"><XCircle className="h-3.5 w-3.5" /><span>Inactivo</span></span>
                       )}
                     </td>
+                    <td className="px-5 py-4">
+                      {u.apiKey ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-1.5 py-1 truncate max-w-[140px]" title={u.apiKey}>
+                            {u.apiKey.slice(0, 10)}…{u.apiKey.slice(-4)}
+                          </span>
+                          <button type="button" onClick={() => handleCopyKey(u)} className="p-1 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition" title="Copiar API key completa">
+                            {copiedId === u.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                          </button>
+                          <button type="button" onClick={() => handleRegenerateKey(u)} disabled={regenerandoId === u.id} className="p-1 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition disabled:opacity-40" title="Regenerar API key">
+                            <RefreshCw className={`h-3.5 w-3.5 ${regenerandoId === u.id ? 'animate-spin' : ''}`} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => handleRegenerateKey(u)} disabled={regenerandoId === u.id} className="inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-emerald-700 transition">
+                          <Key className="h-3 w-3" /> {regenerandoId === u.id ? 'Generando…' : 'Generar'}
+                        </button>
+                      )}
+                    </td>
                     <td className="px-5 py-4 text-[11px] text-gray-500">{u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-ES') : '—'}</td>
                     <td className="px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button type="button" onClick={() => handleOpenEdit(u)} className="p-1.5 rounded-lg text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition" title="Editar usuario"><Edit2 className="h-4 w-4" /></button>
-                        <button type="button" onClick={() => setUserToDelete(u)} disabled={isCurrent} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition disabled:opacity-30" title={isCurrent ? 'No puedes borrar tu usuario' : 'Eliminar usuario'}><Trash2 className="h-4 w-4" /></button>
+                        <button
+                          type="button"
+                          onClick={() => setUserToDelete(u)}
+                          disabled={isCurrent || u.role === 'SUPERADMIN'}
+                          className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                          title={u.role === 'SUPERADMIN' ? 'El superadministrador no se puede eliminar' : isCurrent ? 'No puedes borrar tu usuario' : 'Eliminar usuario'}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -198,6 +263,10 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ currentUser }) => {
               <li className="flex items-center gap-2 text-gray-400"><XCircle className="h-3.5 w-3.5 text-gray-400 shrink-0" /><span>Restringido: administrar usuarios</span></li>
             </ul>
           </div>
+        </div>
+        <div className="mt-3 flex items-center gap-2 text-[11px] text-amber-800 bg-amber-50/60 border border-amber-200 rounded-lg px-3 py-2">
+          <Crown className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+          <span><strong>SUPERADMIN:</strong> mismos permisos que ADMIN, pero es una cuenta permanente — nunca se puede eliminar, desactivar ni degradar. Garantiza que siempre haya acceso al panel.</span>
         </div>
       </div>
 
@@ -237,23 +306,34 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ currentUser }) => {
                   <input type="text" placeholder={editingUser ? '••••••' : 'mín. 4 caracteres'} value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} className="w-full rounded-xl border border-gray-300 px-3 py-2 text-xs text-gray-900 focus:border-emerald-600 focus:outline-hidden" />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1.5">Rol y Nivel de Acceso</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition ${formData.role === 'OPERADOR' ? 'border-blue-500 bg-blue-50/60 ring-2 ring-blue-500/20' : 'border-gray-200 hover:bg-gray-50'}`}>
-                    <input type="radio" name="userRole" value="OPERADOR" checked={formData.role === 'OPERADOR'} onChange={() => setFormData({ ...formData, role: 'OPERADOR' })} className="text-blue-600" />
-                    <div><span className="font-bold text-xs text-gray-900 block">OPERADOR</span><span className="text-[11px] text-gray-500 block">Cargar y editar catálogo</span></div>
-                  </label>
-                  <label className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition ${formData.role === 'ADMIN' ? 'border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-500/20' : 'border-gray-200 hover:bg-gray-50'}`}>
-                    <input type="radio" name="userRole" value="ADMIN" checked={formData.role === 'ADMIN'} onChange={() => setFormData({ ...formData, role: 'ADMIN' })} className="text-emerald-600" />
-                    <div><span className="font-bold text-xs text-gray-900 block">ADMIN</span><span className="text-[11px] text-gray-500 block">Permisos totales</span></div>
-                  </label>
+              {editingUser?.role === 'SUPERADMIN' ? (
+                <div className="flex items-center gap-2.5 p-3 rounded-xl border border-amber-200 bg-amber-50/60">
+                  <Lock className="h-4 w-4 text-amber-700 shrink-0" />
+                  <p className="text-xs text-amber-800">
+                    <strong>Superadministrador:</strong> rol y estado no se pueden cambiar (cuenta permanente). Puedes editar usuario, nombre, correo y contraseña.
+                  </p>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 pt-1">
-                <input id="user-active-checkbox" type="checkbox" checked={formData.active} onChange={(e) => setFormData({ ...formData, active: e.target.checked })} className="rounded text-emerald-600 focus:ring-emerald-500" />
-                <label htmlFor="user-active-checkbox" className="text-xs text-gray-700 font-medium">Cuenta activa para iniciar sesión</label>
-              </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1.5">Rol y Nivel de Acceso</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition ${formData.role === 'OPERADOR' ? 'border-blue-500 bg-blue-50/60 ring-2 ring-blue-500/20' : 'border-gray-200 hover:bg-gray-50'}`}>
+                        <input type="radio" name="userRole" value="OPERADOR" checked={formData.role === 'OPERADOR'} onChange={() => setFormData({ ...formData, role: 'OPERADOR' })} className="text-blue-600" />
+                        <div><span className="font-bold text-xs text-gray-900 block">OPERADOR</span><span className="text-[11px] text-gray-500 block">Cargar y editar catálogo</span></div>
+                      </label>
+                      <label className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition ${formData.role === 'ADMIN' ? 'border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-500/20' : 'border-gray-200 hover:bg-gray-50'}`}>
+                        <input type="radio" name="userRole" value="ADMIN" checked={formData.role === 'ADMIN'} onChange={() => setFormData({ ...formData, role: 'ADMIN' })} className="text-emerald-600" />
+                        <div><span className="font-bold text-xs text-gray-900 block">ADMIN</span><span className="text-[11px] text-gray-500 block">Permisos totales</span></div>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <input id="user-active-checkbox" type="checkbox" checked={formData.active} onChange={(e) => setFormData({ ...formData, active: e.target.checked })} className="rounded text-emerald-600 focus:ring-emerald-500" />
+                    <label htmlFor="user-active-checkbox" className="text-xs text-gray-700 font-medium">Cuenta activa para iniciar sesión</label>
+                  </div>
+                </>
+              )}
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100">
                 <button type="button" onClick={() => setIsCreateModalOpen(false)} className="rounded-xl bg-gray-100 hover:bg-gray-200 px-4 py-2 text-xs font-semibold text-gray-700 transition">Cancelar</button>
                 <button type="submit" className="rounded-xl bg-emerald-600 hover:bg-emerald-700 px-5 py-2 text-xs font-bold text-white shadow-md shadow-emerald-600/20 transition">{editingUser ? 'Guardar Cambios' : 'Crear Usuario'}</button>
