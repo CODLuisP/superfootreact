@@ -31,7 +31,7 @@ const CF_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const CF_BASE = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/images/v1`;
 
 // ─────────────── BD de usuarios (propia del panel) ───────────────
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.VERCEL ? '/tmp' : path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const db = new Database(path.join(DATA_DIR, 'usuarios.db'));
 db.pragma('journal_mode = WAL');
@@ -463,14 +463,18 @@ app.post('/api/users/:id/regenerate-key', requireAdmin, async (req, res) => {
   }
 });
 
-// ─────────────── Estáticos en producción ───────────────
-if (process.env.NODE_ENV === 'production') {
+// ─────────────── Estáticos en producción (solo fuera de Vercel) ───────────────
+if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
   const dist = path.join(__dirname, 'dist');
   app.use(express.static(dist));
   app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
 
-app.listen(PORT, () => {
-  console.log(`✔ BFF Superfood en http://localhost:${PORT}  → backend ${BACKEND}`);
-  if (!CF_TOKEN) console.warn('  ⚠ Falta CLOUDFLARE_API_TOKEN: no se podrán subir imágenes.');
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`✔ BFF Superfood en http://localhost:${PORT}  → backend ${BACKEND}`);
+    if (!CF_TOKEN) console.warn('  ⚠ Falta CLOUDFLARE_API_TOKEN: no se podrán subir imágenes.');
+  });
+}
+
+export default app;
