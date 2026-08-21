@@ -22,7 +22,7 @@ import Database from 'better-sqlite3';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = process.env.PORT || 8787;
-const BACKEND = (process.env.CATALOGO_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+const BACKEND = (process.env.CATALOGO_API_URL || 'https://sr.velsat.pe:2053/superfood').replace(/\/+$/, '');
 const ADMIN_KEY = process.env.CATALOGO_ADMIN_KEY || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-insecure-secret-cambiame';
 

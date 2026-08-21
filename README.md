@@ -7,7 +7,7 @@ navegador) y hace de proxy al backend `superfood`.
 
 ## Arquitectura
 ```
-Navegador ──▶ Vite (3000) ──/api──▶ BFF Express (8787) ──▶ backend superfood (4000) ──▶ SQLite
+Navegador ──▶ Vite (3000) ──/api──▶ BFF Express (8787) ──▶ backend superfood (https://sr.velsat.pe:2053/superfood) ──▶ SQLite
                                         │ .env: CLOUDFLARE_*, CATALOGO_*, SESSION_SECRET
                                         └ usuarios propios (SQLite, data/usuarios.db) + sesión (cookie HttpOnly)
 ```
@@ -20,7 +20,7 @@ npm install
 cp .env.example .env    # rellena CLOUDFLARE_*, CATALOGO_*, SESSION_SECRET, ADMIN_USER/PASSWORD
 npm run dev             # levanta Vite + BFF juntos → http://localhost:3000
 ```
-El **backend** `superfood` debe estar corriendo en paralelo (`http://localhost:4000`
+El **backend** `superfood` está en `https://sr.velsat.pe:2053/superfood` (docs en `https://sr.velsat.pe:2053/superfood/docs/`).
 por defecto). Entra con el `ADMIN_USER`/`ADMIN_PASSWORD` que hayas puesto (se
 crea solo la primera vez que arranca, si la tabla de usuarios está vacía).
 
