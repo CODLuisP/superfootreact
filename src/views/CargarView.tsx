@@ -235,39 +235,38 @@ export const CargarView: React.FC<CargarViewProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       {/* Page Header */}
-      <div className="mb-8">
-      
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Cargar producto</h1>
-        <p className="text-sm sm:text-base text-gray-600 mt-1 max-w-2xl">
-          Sube la foto, escanea o escribe el código y el nombre. Se guarda en el catálogo.
+      <div className="mb-4">
+        <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900 tracking-tight">Cargar producto</h1>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Sube la foto, escanea o escribe el código y el nombre para registrarlo en el catálogo.
         </p>
       </div>
 
       {/* Success Notification Toast */}
       {successToast?.show && (
-        <div className="mb-6 rounded-2xl bg-emerald-50 border border-emerald-200 p-4 flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-              <CheckCircle2 className="h-5 w-5" />
+        <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <CheckCircle2 className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-bold text-emerald-900">¡Producto guardado exitosamente!</p>
-              <p className="text-xs text-emerald-700">&ldquo;{successToast.name}&rdquo; ya se encuentra registrado en el catálogo.</p>
+              <p className="text-xs font-bold text-emerald-900">¡Producto guardado exitosamente!</p>
+              <p className="text-[11px] text-emerald-700">&ldquo;{successToast.name}&rdquo; ya se encuentra registrado.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={onNavigateToCatalog} className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 transition">Ver en Catálogo</button>
-            <button type="button" onClick={() => setSuccessToast(null)} className="text-xs text-emerald-700 hover:text-emerald-900 p-1.5">✕</button>
+          <div className="flex items-center gap-1.5">
+            <button type="button" onClick={onNavigateToCatalog} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold px-2.5 py-1.5 transition">Ver en Catálogo</button>
+            <button type="button" onClick={() => setSuccessToast(null)} className="text-xs text-emerald-700 hover:text-emerald-900 p-1">✕</button>
           </div>
         </div>
       )}
 
       {/* Main Form Card */}
-      <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-md shadow-gray-200/60 border border-gray-200/80 p-6 sm:p-8 space-y-7">
+      <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200/80 p-5 sm:p-6 space-y-4">
         {submitError && (
-          <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 p-3 text-xs text-red-700">
+          <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 p-2.5 text-xs text-red-700">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{submitError}</span>
           </div>
@@ -275,9 +274,9 @@ export const CargarView: React.FC<CargarViewProps> = ({
 
         {/* Section 1: Product Photo Dropzone */}
         <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-700 mb-1.5">
             Fotografía del Producto{' '}
-            <span className="text-gray-400 font-normal normal-case">(Opcional / Recomendado)</span>
+            <span className="text-gray-400 font-normal normal-case">(Opcional)</span>
           </label>
 
           <div
@@ -286,48 +285,41 @@ export const CargarView: React.FC<CargarViewProps> = ({
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClick={() => !image && fileInputRef.current?.click()}
-            className={`relative rounded-2xl border-2 border-dashed transition-all duration-200 cursor-pointer overflow-hidden ${
-              isDragging ? 'border-emerald-500 bg-emerald-50/70 scale-[1.01]' : image ? 'border-gray-200 bg-gray-50' : 'border-gray-300 hover:border-emerald-500 hover:bg-gray-50/80'
+            className={`relative rounded-xl border-2 border-dashed transition-all duration-150 cursor-pointer overflow-hidden ${
+              isDragging ? 'border-emerald-500 bg-emerald-50/70' : image ? 'border-gray-200 bg-gray-50/50' : 'border-gray-300 hover:border-emerald-500 hover:bg-gray-50/60'
             }`}
           >
             {image ? (
-              <div className="p-4 flex flex-col sm:flex-row items-center gap-5">
-                <div className="relative h-40 w-40 sm:h-36 sm:w-36 rounded-xl overflow-hidden bg-white border border-gray-200 shadow-xs shrink-0">
+              <div className="p-2.5 flex items-center gap-3.5">
+                <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-white border border-gray-200 shadow-2xs shrink-0">
                   <img src={image} alt="Vista previa del producto" className="h-full w-full object-cover" />
                 </div>
-                <div className="flex-1 text-center sm:text-left space-y-2">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                    <CheckCircle2 className="h-3 w-3" />
                     <span>Imagen cargada</span>
                   </div>
-                  <p className="text-xs text-gray-600 truncate max-w-sm">{imageFileName || 'Imagen del producto cargada'}</p>
-                  <p className="text-[11px] text-gray-400">Formatos soportados: JPG, PNG, WebP, GIF (sin .ico)</p>
-                  <div className="flex items-center gap-2 pt-1 justify-center sm:justify-start">
-                    <button type="button" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }} className="rounded-lg bg-gray-200 hover:bg-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition">Cambiar foto</button>
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setImage(''); setImageFileName(''); }} className="rounded-lg bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 text-xs font-medium transition inline-flex items-center gap-1">
-                      <Trash2 className="h-3.5 w-3.5" />
+                  <p className="text-xs text-gray-700 font-medium truncate mt-0.5">{imageFileName || 'Imagen del producto'}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <button type="button" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }} className="rounded-md bg-gray-200 hover:bg-gray-300 px-2 py-0.5 text-[11px] font-medium text-gray-700 transition">Cambiar</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setImage(''); setImageFileName(''); }} className="rounded-md bg-red-50 hover:bg-red-100 text-red-600 px-2 py-0.5 text-[11px] font-medium transition inline-flex items-center gap-1">
+                      <Trash2 className="h-3 w-3" />
                       <span>Quitar</span>
                     </button>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="p-8 sm:p-10 text-center flex flex-col items-center justify-center">
-                <div className="h-14 w-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3 shadow-2xs">
-                  <Upload className="h-7 w-7" />
+              <div className="py-4 px-4 text-center flex flex-col sm:flex-row items-center justify-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                  <Upload className="h-4 w-4" />
                 </div>
-                <p className="text-sm font-semibold text-gray-800">
-                  Arrastra y suelta la imagen aquí, o <span className="text-emerald-600 underline">haz clic para explorar</span>
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  También puedes presionar <kbd className="px-1.5 py-0.5 bg-gray-200 rounded font-mono text-[10px] text-gray-700">Ctrl + V</kbd> para pegar desde el portapapeles
-                </p>
-                <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-400">
-                  <span className="bg-gray-100 px-2 py-0.5 rounded">JPG</span>
-                  <span className="bg-gray-100 px-2 py-0.5 rounded">PNG</span>
-                  <span className="bg-gray-100 px-2 py-0.5 rounded">WebP</span>
-                  <span className="bg-gray-100 px-2 py-0.5 rounded">GIF</span>
-                  <span className="text-red-400">(no .ico)</span>
+                <div className="text-center sm:text-left">
+                  <p className="text-xs font-semibold text-gray-800">
+                    Arrastra la imagen aquí, o <span className="text-emerald-600 underline">haz clic para explorar</span>
+                    <span className="text-gray-400 font-normal text-[11px] ml-1.5">(o presiona <kbd className="px-1 py-0.5 bg-gray-100 border border-gray-200 rounded text-[10px] font-mono text-gray-600">Ctrl + V</kbd>)</span>
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">JPG, PNG, WebP, GIF (sin .ico)</p>
                 </div>
               </div>
             )}
@@ -336,25 +328,25 @@ export const CargarView: React.FC<CargarViewProps> = ({
           </div>
 
           {errors.image && (
-            <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
-              <AlertCircle className="h-3.5 w-3.5" />
+            <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" />
               <span>{errors.image}</span>
             </p>
           )}
         </div>
 
         {/* Section 2: Barcode & Product Name (Required) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Código de barras */}
           <div>
-            <label htmlFor="barcode-input" className="block text-xs font-bold uppercase tracking-wider text-gray-800 mb-1.5">
+            <label htmlFor="barcode-input" className="block text-[11px] font-bold uppercase tracking-wider text-gray-700 mb-1">
               Código de barras <span className="text-red-500">*</span>
             </label>
 
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               <div className="relative flex-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-gray-400">
-                  <Barcode className="h-4 w-4" />
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                  <Barcode className="h-3.5 w-3.5" />
                 </div>
                 <input
                   ref={barcodeInputRef}
@@ -364,19 +356,19 @@ export const CargarView: React.FC<CargarViewProps> = ({
                   placeholder="ej. 7750123456789"
                   value={code}
                   onChange={(e) => { setCode(e.target.value); if (errors.code) setErrors((prev) => ({ ...prev, code: undefined })); }}
-                  className={`w-full rounded-xl border ${errors.code ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-300'} pl-10 pr-3 py-2.5 font-mono text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition`}
+                  className={`w-full rounded-xl border ${errors.code ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-300'} pl-9 pr-3 py-2 font-mono text-xs text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition`}
                 />
               </div>
 
-              <button type="button" id="scan-camera-button" onClick={() => setIsScannerOpen(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gray-900 hover:bg-black text-white text-xs font-semibold shadow-2xs hover:scale-[1.02] active:scale-98 transition shrink-0">
-                <Camera className="h-4 w-4 text-emerald-400" />
+              <button type="button" id="scan-camera-button" onClick={() => setIsScannerOpen(true)} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-gray-900 hover:bg-black text-white text-xs font-semibold shadow-2xs transition shrink-0" title="Escanear con la cámara">
+                <Camera className="h-3.5 w-3.5 text-emerald-400" />
                 <span>Escanear</span>
               </button>
             </div>
 
             {errors.code && (
-              <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-3.5 w-3.5" />
+              <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
                 <span>{errors.code}</span>
               </p>
             )}
@@ -384,12 +376,12 @@ export const CargarView: React.FC<CargarViewProps> = ({
 
           {/* Nombre del producto */}
           <div>
-            <label htmlFor="product-name-input" className="block text-xs font-bold uppercase tracking-wider text-gray-800 mb-1.5">
+            <label htmlFor="product-name-input" className="block text-[11px] font-bold uppercase tracking-wider text-gray-700 mb-1">
               Nombre del producto <span className="text-red-500">*</span>
             </label>
             <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-gray-400">
-                <Tag className="h-4 w-4" />
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                <Tag className="h-3.5 w-3.5" />
               </div>
               <input
                 id="product-name-input"
@@ -398,49 +390,48 @@ export const CargarView: React.FC<CargarViewProps> = ({
                 placeholder="ej. Quinoa Real Orgánica 500g"
                 value={name}
                 onChange={(e) => { setName(e.target.value); if (errors.name) setErrors((prev) => ({ ...prev, name: undefined })); }}
-                className={`w-full rounded-xl border ${errors.name ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-300'} pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition`}
+                className={`w-full rounded-xl border ${errors.name ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-300'} pl-9 pr-3 py-2 text-xs text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition`}
               />
             </div>
             {errors.name && (
-              <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-3.5 w-3.5" />
+              <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
                 <span>{errors.name}</span>
               </p>
             )}
-            <p className="mt-1.5 text-[11px] text-gray-400">Incluye marca, tipo y gramaje/volumen para fácil identificación.</p>
           </div>
         </div>
 
         {/* Vista previa del código de barras generado */}
         {code.trim() && (
-          <div className="flex justify-center">
-            <BarcodeImage value={code.trim()} />
+          <div className="flex justify-center pt-0.5">
+            <BarcodeImage value={code.trim()} height={38} />
           </div>
         )}
 
         {/* Section 3: Status selector */}
-        <div className="flex flex-wrap items-center gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200/70">
-          <span className="text-xs font-semibold text-gray-700">Estado de carga:</span>
-          <div className="flex items-center gap-4">
-            <label className="inline-flex items-center gap-1.5 text-xs text-gray-800 cursor-pointer">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-gray-50/80 rounded-xl border border-gray-200/70 text-xs">
+          <span className="font-semibold text-gray-700 text-xs">Estado de carga:</span>
+          <div className="flex items-center gap-2">
+            <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-xs transition ${status === 'aprobado' ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-bold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
               <input type="radio" name="productStatus" value="aprobado" checked={status === 'aprobado'} onChange={() => setStatus('aprobado')} className="text-emerald-600 focus:ring-emerald-500" />
-              <span className="font-medium text-emerald-800">Catálogo Directo (Aprobado)</span>
+              <span>Catálogo Directo (Aprobado)</span>
             </label>
-            <label className="inline-flex items-center gap-1.5 text-xs text-gray-800 cursor-pointer">
+            <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-xs transition ${status === 'pendiente' ? 'bg-amber-50 border-amber-300 text-amber-900 font-bold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
               <input type="radio" name="productStatus" value="pendiente" checked={status === 'pendiente'} onChange={() => setStatus('pendiente')} className="text-amber-600 focus:ring-amber-500" />
-              <span className="font-medium text-amber-800">Guardar como Pendiente de Revisión</span>
+              <span>Pendiente de Revisión</span>
             </label>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="pt-4 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-end gap-3">
-          <button type="button" id="clear-form-button" onClick={handleClear} className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-700 px-5 py-2.5 text-xs font-semibold transition">
+        <div className="pt-2 border-t border-gray-100 flex items-center justify-end gap-2.5">
+          <button type="button" id="clear-form-button" onClick={handleClear} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 text-xs font-semibold transition">
             <RotateCcw className="h-3.5 w-3.5" />
             <span>Limpiar</span>
           </button>
 
-          <button type="submit" id="save-product-button" disabled={isSaving} className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-7 py-2.5 text-xs font-bold shadow-md shadow-emerald-600/25 hover:scale-[1.01] active:scale-98 transition">
+          <button type="submit" id="save-product-button" disabled={isSaving} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-6 py-2 text-xs font-bold shadow-md shadow-emerald-600/25 active:scale-98 transition">
             <CheckCircle2 className="h-4 w-4" />
             <span>{isSaving ? 'Guardando…' : 'Guardar producto'}</span>
           </button>

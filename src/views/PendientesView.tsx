@@ -101,44 +101,44 @@ export const PendientesView: React.FC<PendientesViewProps> = ({ currentUser, onC
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
-          <div className="flex items-center gap-2 text-amber-700 font-semibold text-xs uppercase tracking-wider mb-1">
-            <Clock className="h-4 w-4" />
+          <div className="flex items-center gap-1.5 text-amber-700 font-semibold text-[10px] uppercase tracking-wider mb-0.5">
+            <Clock className="h-3.5 w-3.5" />
             <span>Revisión de Calidad</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Productos Pendientes</h1>
-          <p className="text-sm text-gray-500 mt-1">{total.toLocaleString('es')} en cola de revisión.</p>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900 tracking-tight">Productos Pendientes</h1>
+          <p className="text-xs text-gray-500 mt-0.5">{total.toLocaleString('es')} en cola de revisión.</p>
         </div>
 
         {visibles.length > 0 && (
-          <button type="button" disabled={aprobandoTodo} onClick={handleApproveAllOnPage} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition">
-            <CheckCheck className="h-4 w-4" />
+          <button type="button" disabled={aprobandoTodo} onClick={handleApproveAllOnPage} className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition">
+            <CheckCheck className="h-3.5 w-3.5" />
             <span>Aprobar los {visibles.length} de esta página</span>
           </button>
         )}
       </div>
 
       {/* Search + filter */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-gray-200 shadow-sm mb-6 flex flex-col sm:flex-row gap-3 sm:items-center">
+      <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-gray-200 shadow-sm mb-4 flex flex-col sm:flex-row gap-2.5 sm:items-center">
         <div className="relative flex-1">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-gray-400">
-            <Search className="h-4 w-4" />
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+            <Search className="h-3.5 w-3.5" />
           </div>
           <input
             type="text"
             placeholder="Buscar por nombre o código…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition"
+            className="w-full rounded-xl border border-gray-300 pl-9 pr-4 py-2 text-xs text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition"
           />
         </div>
         <button
           type="button"
           onClick={() => setOnlySinImagen((v) => !v)}
-          className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition inline-flex items-center gap-1.5 ${onlySinImagen ? 'bg-amber-600 text-white shadow-xs' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}
+          className={`shrink-0 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition inline-flex items-center gap-1.5 ${onlySinImagen ? 'bg-amber-600 text-white shadow-xs' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}
         >
           <ImageIcon className="h-3.5 w-3.5" />
           <span>Solo sin imagen (esta página)</span>
@@ -147,60 +147,60 @@ export const PendientesView: React.FC<PendientesViewProps> = ({ currentUser, onC
 
       {/* Content */}
       {!loading && visibles.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center shadow-xs">
-          <div className="h-16 w-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4"><PackageCheck className="h-9 w-9" /></div>
-          <h3 className="text-lg font-bold text-gray-900">{total === 0 ? '¡Excelente! No hay productos pendientes' : 'Sin resultados en esta página'}</h3>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1.5 max-w-md mx-auto">
+        <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center shadow-xs">
+          <div className="h-12 w-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2.5"><PackageCheck className="h-7 w-7" /></div>
+          <h3 className="text-sm font-bold text-gray-900">{total === 0 ? '¡Excelente! No hay productos pendientes' : 'Sin resultados en esta página'}</h3>
+          <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
             {total === 0 ? 'Todos los productos han sido verificados y aprobados.' : 'Prueba otra búsqueda o quita el filtro.'}
           </p>
           {total === 0 && (
-            <button type="button" onClick={onNavigateToCargar} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 shadow-md shadow-emerald-600/20 transition">
-              <Sparkles className="h-4 w-4" />
+            <button type="button" onClick={onNavigateToCargar} className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 shadow-md shadow-emerald-600/20 transition">
+              <Sparkles className="h-3.5 w-3.5" />
               <span>Cargar un nuevo producto</span>
             </button>
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibles.map((p) => {
             const hasNoImage = !p.image;
             const hasUnverifiedCode = p.code.toUpperCase().includes('PEND') || p.code.length < 5;
             return (
-              <div key={p.id} className="bg-white rounded-2xl border-2 border-amber-200/80 shadow-xs hover:shadow-md transition-shadow overflow-hidden flex flex-col justify-between">
+              <div key={p.id} className="bg-white rounded-2xl border border-amber-200/80 shadow-xs hover:shadow-md transition-shadow overflow-hidden flex flex-col justify-between">
                 <div>
-                  <div className="bg-amber-50 px-4 py-2.5 border-b border-amber-200/60 flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                  <div className="bg-amber-50/80 px-3.5 py-2 border-b border-amber-200/60 flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800">
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                       {hasNoImage && hasUnverifiedCode ? 'Falta foto y verificar código' : hasNoImage ? 'Falta fotografía' : 'Código sin verificar'}
                     </span>
-                    <span className="text-[10px] font-semibold text-amber-700 uppercase">Pendiente</span>
+                    <span className="text-[9px] font-bold text-amber-700 uppercase bg-amber-100 px-1.5 py-0.5 rounded">Pendiente</span>
                   </div>
 
-                  <div className="p-5 space-y-4">
-                    <div className="flex gap-4">
-                      <div className="relative h-20 w-20 rounded-xl bg-gray-50 border border-dashed border-gray-300 overflow-hidden flex items-center justify-center shrink-0 group">
+                  <div className="p-3.5 space-y-2.5">
+                    <div className="flex gap-3">
+                      <div className="relative h-16 w-16 rounded-lg bg-gray-50 border border-dashed border-gray-300 overflow-hidden flex items-center justify-center shrink-0 group">
                         {p.image ? (
                           <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-cover" />
                         ) : (
-                          <label className="cursor-pointer flex flex-col items-center justify-center p-1 text-center text-[10px] text-gray-400 group-hover:text-emerald-700">
-                            <UploadCloud className="h-5 w-5 mb-0.5" />
+                          <label className="cursor-pointer flex flex-col items-center justify-center p-1 text-center text-[9px] text-gray-400 group-hover:text-emerald-700">
+                            <UploadCloud className="h-4 w-4 mb-0.5" />
                             <span>Subir foto</span>
                             <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(e) => e.target.files?.[0] && handleQuickImageUpload(p, e.target.files[0])} className="hidden" />
                           </label>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-gray-900 text-sm leading-snug line-clamp-2">{p.name}</h3>
-                        <div className="mt-2"><BarcodeBadge code={p.code} /></div>
+                        <h3 className="font-bold text-gray-900 text-xs leading-snug line-clamp-2">{p.name}</h3>
+                        <div className="mt-1.5"><BarcodeBadge code={p.code} /></div>
                       </div>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-600 space-y-1">
-                      <div className="flex items-center justify-between text-[11px]">
+                    <div className="p-2 rounded-lg bg-gray-50 border border-gray-100 text-[11px] text-gray-600 space-y-0.5">
+                      <div className="flex items-center justify-between">
                         <span className="text-gray-400">Registrado por:</span>
                         <span className="font-semibold text-gray-700">{p.createdBy || '—'}</span>
                       </div>
-                      <div className="flex items-center justify-between text-[11px]">
+                      <div className="flex items-center justify-between">
                         <span className="text-gray-400">Fecha:</span>
                         <span>{p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}</span>
                       </div>
@@ -208,15 +208,15 @@ export const PendientesView: React.FC<PendientesViewProps> = ({ currentUser, onC
                   </div>
                 </div>
 
-                <div className="px-5 py-3.5 bg-gray-50/90 border-t border-gray-100 flex items-center justify-between gap-2">
-                  <button type="button" onClick={() => handleDelete(p)} className="p-2 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition" title="Descartar"><Trash2 className="h-4 w-4" /></button>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setEditingProduct(p)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-100 shadow-2xs transition">
-                      <Edit2 className="h-3.5 w-3.5" />
+                <div className="px-3.5 py-2 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between gap-2">
+                  <button type="button" onClick={() => handleDelete(p)} className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition" title="Descartar"><Trash2 className="h-3.5 w-3.5" /></button>
+                  <div className="flex items-center gap-1.5">
+                    <button type="button" onClick={() => setEditingProduct(p)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-gray-300 text-[11px] font-semibold text-gray-700 hover:bg-gray-100 shadow-2xs transition">
+                      <Edit2 className="h-3 w-3" />
                       <span>Completar</span>
                     </button>
-                    <button type="button" disabled={busyCode === p.code} onClick={() => handleApprove(p)} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    <button type="button" disabled={busyCode === p.code} onClick={() => handleApprove(p)} className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-[11px] font-bold shadow-md shadow-emerald-600/20 transition">
+                      <CheckCircle2 className="h-3 w-3" />
                       <span>Aprobar</span>
                     </button>
                   </div>
