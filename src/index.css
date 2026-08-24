@@ -1,13 +1,5 @@
 @import "tailwindcss";
 
-.no-scrollbar {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
 /* Evita el zoom automático de Safari en iOS al enfocar un input
    (Safari hace zoom cuando el font-size del campo es menor a 16px) */
 @media (max-width: 767px) {

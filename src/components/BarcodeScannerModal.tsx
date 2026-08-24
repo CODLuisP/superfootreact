@@ -66,30 +66,38 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   // sin checksum verificable, p. ej. CODE_128).
   const lastReadRef = useRef<{ code: string; hits: number }>({ code: '', hits: 0 });
 
+  // El padre pasa `onScan`/`onClose` como funciones inline, así que cambian de
+  // identidad en cada render suyo. Guardarlas en refs mantiene estables los
+  // callbacks de abajo y evita que el efecto de arranque reinicie la cámara a
+  // media lectura (reiniciarla borra el progreso del decodificador).
+  const onScanRef = useRef(onScan);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onScanRef.current = onScan;
+    onCloseRef.current = onClose;
+  });
+
   const scannerContainerId = 'superfood-barcode-reader';
 
   // Handle successful detection
-  const handleSuccess = useCallback(
-    (decodedText: string) => {
-      const clean = decodedText.trim();
-      if (!clean || doneRef.current) return;
-      doneRef.current = true;
+  const handleSuccess = useCallback((decodedText: string) => {
+    const clean = decodedText.trim();
+    if (!clean || doneRef.current) return;
+    doneRef.current = true;
 
-      playScanBeep();
-      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-        try {
-          navigator.vibrate(100);
-        } catch {
-          /* ignore */
-        }
+    playScanBeep();
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(100);
+      } catch {
+        /* ignore */
       }
+    }
 
-      cleanupAll();
-      onScan(clean);
-      onClose();
-    },
-    [onScan, onClose]
-  );
+    cleanupAll();
+    onScanRef.current(clean);
+    onCloseRef.current();
+  }, []);
 
   /**
    * Filtra la lectura cruda antes de darla por buena:
@@ -302,13 +310,16 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           // ZXing decodifica en JS puro: a 25 fps sobre 1080p no le da tiempo y
           // se pierden fotogramas enteros. 15 fps sobre 720p rinde bastante más.
           fps: 15,
-          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            // Zona de lectura casi completa: recortarla era la causa de que un
-            // código bien encuadrado quedara fuera del área analizada.
-            const width = Math.floor(viewfinderWidth * 0.96);
-            const height = Math.floor(viewfinderHeight * 0.75);
-            return { width, height };
-          },
+          // Sin qrbox: se analiza el fotograma completo.
+          //
+          // qrbox recorta la imagen antes de decodificar, y para saber QUÉ píxeles
+          // recortar html5-qrcode asume que el vídeo se muestra en modo "contain".
+          // El vídeo estaba con `object-cover`, así que esa cuenta salía desplazada
+          // y la librería terminaba analizando una zona distinta de la que se ve en
+          // pantalla: por eso el código quedaba perfectamente encuadrado y aun así
+          // no se detectaba nada. Analizando el fotograma entero el problema
+          // desaparece y ya no depende del CSS.
+          qrbox: undefined,
           aspectRatio: undefined,
           disableFlip: true,
           videoConstraints: {
@@ -540,11 +551,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               playsInline
               autoPlay
               muted
-              className={`w-full h-full object-cover ${scanningEngine === 'native' ? '' : 'hidden'}`}
+              className={`w-full h-full object-contain ${scanningEngine === 'native' ? '' : 'hidden'}`}
             />
+            {/*
+              object-contain (no object-cover): así se ve el fotograma completo,
+              que es exactamente el que se analiza. Con object-cover los bordes
+              quedaban recortados en pantalla y lo que se veía no coincidía con
+              lo que la librería estaba leyendo.
+            */}
             <div
               id={scannerContainerId}
-              className={`w-full h-full object-cover [&>video]:w-full [&>video]:h-full [&>video]:object-cover ${
+              className={`w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-contain ${
                 scanningEngine === 'native' ? 'hidden' : ''
               }`}
             />
@@ -603,7 +620,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             {isScanning && !cameraError && (
               <div className="absolute bottom-2.5 inset-x-0 flex justify-center pointer-events-none px-4">
                 <span className="bg-black/65 backdrop-blur-xs text-white text-[11px] font-medium px-3 py-1 rounded-full shadow-sm">
-                  Centra el código de barras dentro del marco
+                  Acerca el código hasta que llene el ancho y espera al enfoque
                 </span>
               </div>
             )}
