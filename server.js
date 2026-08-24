@@ -373,11 +373,6 @@ app.get('/api/products', requireAuth, async (req, res) => {
   } catch (e) { res.status(502).json({ error: 'No se pudo leer el catálogo: ' + e.message }); }
 });
 
-/**
- * GET /api/products/counts → totales livianos para los badges del navbar
- * (usa limit=1 en cada endpoint: el backend igual calcula el COUNT(*) real,
- * pero no transfiere filas de más).
- */
 app.get('/api/products/counts', requireAuth, async (_req, res) => {
   try {
     const [mRes, pRes] = await Promise.all([
@@ -396,20 +391,55 @@ app.get('/api/products/counts', requireAuth, async (_req, res) => {
 app.post('/api/products', requireAuth, async (req, res) => {
   try {
     const { code, name, image, status } = req.body || {};
-    if (!code || !name) return res.status(400).json({ error: 'Código y nombre son obligatorios.' });
-    const imagenUrl = await resolverImagen(code, image);
-    if (status === 'pendiente') {
-      const r = await backend('/admin/pendientes', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl, origen: req.session.username } });
-      const data = await r.json().catch(() => ({}));
-      if (r.status === 409) return res.status(409).json({ error: data.error || 'Ese código ya existe en el catálogo maestro.' });
-      if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
-      return res.status(201).json({ product: { id: code, code, name, image: imagenUrl || '', status: 'pendiente', createdBy: req.session.username, createdAt: new Date().toISOString() } });
+    const cleanCode = String(code || '').trim();
+    const cleanName = String(name || '').trim();
+
+    if (!cleanCode || !cleanName) {
+      return res.status(400).json({ error: 'Código de barras y nombre son obligatorios.' });
     }
-    const r = await backend('/admin/productos', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl } });
+
+    // 1. Verificación previa de existencia para evitar sobreescribir productos existentes
+    const rCheck = await backend(`/admin/productos?q=${encodeURIComponent(cleanCode)}&limit=1`, {});
+    if (rCheck.ok) {
+      const dataCheck = await rCheck.json().catch(() => ({}));
+      const existing = (dataCheck.items || []).find(
+        (p) => String(p.codigoBarras || p.codigo_barras).trim() === cleanCode
+      );
+      if (existing) {
+        return res.status(409).json({
+          error: `Ya existe un producto registrado con el código de barras "${cleanCode}" ("${existing.nombre}"). No es posible duplicarlo.`,
+        });
+      }
+    }
+
+    const imagenUrl = await resolverImagen(cleanCode, image);
+
+    if (status === 'pendiente') {
+      const r = await backend('/admin/pendientes', {
+        method: 'POST',
+        body: { codigoBarras: cleanCode, nombre: cleanName, imagenUrl, origen: req.session.username },
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.status === 409) return res.status(409).json({ error: data.error || `Ya existe un producto con el código "${cleanCode}".` });
+      if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
+      return res.status(201).json({
+        product: { id: cleanCode, code: cleanCode, name: cleanName, image: imagenUrl || '', status: 'pendiente', createdBy: req.session.username, createdAt: new Date().toISOString() },
+      });
+    }
+
+    const r = await backend('/admin/productos', {
+      method: 'POST',
+      body: { codigoBarras: cleanCode, nombre: cleanName, imagenUrl },
+    });
     const data = await r.json().catch(() => ({}));
+    if (r.status === 409) return res.status(409).json({ error: data.error || `Ya existe un producto con el código "${cleanCode}".` });
     if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
-    res.status(201).json({ product: { id: code, code, name, image: imagenUrl || '', status: 'aprobado', createdAt: new Date().toISOString() } });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+    res.status(201).json({
+      product: { id: cleanCode, code: cleanCode, name: cleanName, image: imagenUrl || '', status: 'aprobado', createdAt: new Date().toISOString() },
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 app.put('/api/products/:code', requireAuth, async (req, res) => {
@@ -417,8 +447,26 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
     const oldCode = String(req.params.code).trim();
     const { code: rawNewCode, newCode, name, image, status } = req.body || {};
     const targetCode = String(rawNewCode || newCode || oldCode).trim();
+    const cleanName = String(name || '').trim();
+
     if (!targetCode) return res.status(400).json({ error: 'El código de barras es obligatorio.' });
-    if (!name || !String(name).trim()) return res.status(400).json({ error: 'El nombre es obligatorio.' });
+    if (!cleanName) return res.status(400).json({ error: 'El nombre es obligatorio.' });
+
+    // Si el usuario está cambiando el código de barras, verificar que el nuevo código no pertenezca a otro producto
+    if (targetCode !== oldCode) {
+      const rCheck = await backend(`/admin/productos?q=${encodeURIComponent(targetCode)}&limit=1`, {});
+      if (rCheck.ok) {
+        const dataCheck = await rCheck.json().catch(() => ({}));
+        const existing = (dataCheck.items || []).find(
+          (p) => String(p.codigoBarras || p.codigo_barras).trim() === targetCode
+        );
+        if (existing) {
+          return res.status(409).json({
+            error: `El código de barras "${targetCode}" ya está registrado para otro producto ("${existing.nombre}").`,
+          });
+        }
+      }
+    }
 
     const imagenUrl = await resolverImagen(targetCode, image);
 
@@ -426,7 +474,7 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
       // Upsert en pendientes con el targetCode
       const r = await backend('/admin/pendientes', {
         method: 'POST',
-        body: { codigoBarras: targetCode, nombre: String(name).trim(), imagenUrl, origen: req.session.username }
+        body: { codigoBarras: targetCode, nombre: cleanName, imagenUrl, origen: req.session.username },
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok && r.status !== 409) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
@@ -434,15 +482,15 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
       if (targetCode !== oldCode) {
         await backend(`/admin/pendientes/${encodeURIComponent(oldCode)}`, { method: 'DELETE' }).catch(() => {});
       }
-      return res.json({ product: { id: targetCode, code: targetCode, name: String(name).trim(), image: imagenUrl || '', status: 'pendiente' } });
+      return res.json({ product: { id: targetCode, code: targetCode, name: cleanName, image: imagenUrl || '', status: 'pendiente' } });
     }
 
     // Catálogo maestro ('aprobado'):
     if (targetCode !== oldCode) {
-      // 1. Creamos / actualizamos con el nuevo código
+      // 1. Creamos con el nuevo código
       const rCreate = await backend('/admin/productos', {
         method: 'POST',
-        body: { codigoBarras: targetCode, nombre: String(name).trim(), imagenUrl }
+        body: { codigoBarras: targetCode, nombre: cleanName, imagenUrl },
       });
       const dataCreate = await rCreate.json().catch(() => ({}));
       if (!rCreate.ok) return res.status(rCreate.status || 502).json({ error: dataCreate.error || `Error al actualizar producto (${rCreate.status}).` });
@@ -452,14 +500,14 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
     } else {
       const r = await backend(`/admin/productos/${encodeURIComponent(oldCode)}`, {
         method: 'PUT',
-        body: { nombre: String(name).trim(), imagenUrl }
+        body: { nombre: cleanName, imagenUrl },
       });
       const data = await r.json().catch(() => ({}));
-      if (r.status === 404) return res.status(404).json({ error: data.error || 'Producto no encontrado.' });
+      if (r.status === 404) return res.status(404).json({ error: 'Producto no encontrado.' });
       if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
     }
 
-    res.json({ product: { id: targetCode, code: targetCode, name: String(name).trim(), image: imagenUrl || '', status: 'aprobado' } });
+    res.json({ product: { id: targetCode, code: targetCode, name: cleanName, image: imagenUrl || '', status: 'aprobado' } });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
