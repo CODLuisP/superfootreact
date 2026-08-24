@@ -11,10 +11,13 @@ import {
   CheckCircle2,
   Trash2,
   AlertCircle,
+  AlertTriangle,
   Sparkles,
   Barcode,
   Tag,
   RotateCcw,
+  Loader2,
+  ExternalLink,
 } from 'lucide-react';
 
 interface CargarViewProps {
@@ -45,8 +48,51 @@ export const CargarView: React.FC<CargarViewProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<{ show: boolean; name: string } | null>(null);
 
+  // Verificación instantánea de duplicados
+  const [checkingCode, setCheckingCode] = useState(false);
+  const [existingProduct, setExistingProduct] = useState<Product | null>(null);
+
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Verificación en vivo cada vez que se escribe o escanea un código
+  useEffect(() => {
+    const cleanCode = code.trim();
+    if (!cleanCode || cleanCode.length < 3) {
+      setExistingProduct(null);
+      setCheckingCode(false);
+      return;
+    }
+
+    setCheckingCode(true);
+    const timer = setTimeout(async () => {
+      try {
+        const { items } = await api.getProductsPage({
+          status: 'aprobado',
+          buscar: cleanCode,
+          limit: 1,
+        });
+        const match = (items || []).find((p) => String(p.code).trim() === cleanCode);
+        if (match) {
+          setExistingProduct(match);
+        } else {
+          const { items: pendings } = await api.getProductsPage({
+            status: 'pendiente',
+            buscar: cleanCode,
+            limit: 1,
+          });
+          const pendMatch = (pendings || []).find((p) => String(p.code).trim() === cleanCode);
+          setExistingProduct(pendMatch || null);
+        }
+      } catch {
+        setExistingProduct(null);
+      } finally {
+        setCheckingCode(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [code]);
 
   // Global Paste Handler for Ctrl+V
   useEffect(() => {
@@ -210,6 +256,11 @@ export const CargarView: React.FC<CargarViewProps> = ({
     setSubmitError(null);
     if (!validateForm() || isSaving) return;
 
+    if (existingProduct) {
+      setSubmitError(`El código "${code.trim()}" ya está registrado como "${existingProduct.name}". No es posible duplicarlo.`);
+      return;
+    }
+
     setIsSaving(true);
     try {
       const saved = await api.createProduct({
@@ -356,7 +407,13 @@ export const CargarView: React.FC<CargarViewProps> = ({
                   placeholder="ej. 7750123456789"
                   value={code}
                   onChange={(e) => { setCode(e.target.value); if (errors.code) setErrors((prev) => ({ ...prev, code: undefined })); }}
-                  className={`w-full rounded-xl border ${errors.code ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-300'} pl-9 pr-3 py-2 font-mono text-xs text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition`}
+                  className={`w-full rounded-xl border ${
+                    existingProduct
+                      ? 'border-amber-400 bg-amber-50/30 ring-2 ring-amber-100'
+                      : errors.code
+                      ? 'border-red-300 ring-2 ring-red-100'
+                      : 'border-gray-300'
+                  } pl-9 pr-3 py-2 font-mono text-xs text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition`}
                 />
               </div>
 
@@ -365,6 +422,52 @@ export const CargarView: React.FC<CargarViewProps> = ({
                 <span>Escanear</span>
               </button>
             </div>
+
+            {/* Estado de comprobación en vivo */}
+            {checkingCode && (
+              <p className="mt-1 text-[11px] text-gray-500 flex items-center gap-1 animate-pulse">
+                <Loader2 className="h-3 w-3 animate-spin text-emerald-600" />
+                <span>Comprobando código en el catálogo…</span>
+              </p>
+            )}
+
+            {!checkingCode && existingProduct && (
+              <div className="mt-2 rounded-xl bg-amber-50 border border-amber-300 p-2.5 flex items-center justify-between gap-2.5 text-xs animate-in fade-in">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="h-10 w-10 rounded-lg bg-white border border-amber-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
+                    {existingProduct.image ? (
+                      <img src={existingProduct.image} alt={existingProduct.name} className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-[8px] text-amber-700 font-bold">Sin foto</span>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold text-amber-900 leading-tight flex items-center gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                      <span>¡Este código ya está registrado!</span>
+                    </p>
+                    <p className="text-xs text-gray-800 font-semibold truncate mt-0.5" title={existingProduct.name}>
+                      {existingProduct.name}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onNavigateToCatalog}
+                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold shadow-2xs transition"
+                >
+                  <span>Ver en catálogo</span>
+                  <ExternalLink className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+
+            {!checkingCode && !existingProduct && code.trim().length >= 6 && (
+              <p className="mt-1 text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3" />
+                <span>Código disponible para nuevo registro</span>
+              </p>
+            )}
 
             {errors.code && (
               <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1">
