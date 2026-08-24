@@ -21,6 +21,25 @@ const SUPPORTED_FORMATS_BARCODE_DETECTOR = [
   'data_matrix',
 ];
 
+/**
+ * Verifica el dígito de control de EAN-8 / UPC-A / EAN-13.
+ * Sirve para aceptar una lectura al instante cuando es matemáticamente
+ * correcta, en vez de exigir confirmación por repetición (que es lo lento).
+ */
+const tieneChecksumValido = (code: string): boolean => {
+  if (!/^\d+$/.test(code)) return false;
+  if (code.length !== 8 && code.length !== 12 && code.length !== 13) return false;
+
+  const digits = code.split('').map(Number);
+  const check = digits.pop()!;
+  // De derecha a izquierda (sin el dígito de control): pesos 3,1,3,1…
+  const sum = digits
+    .reverse()
+    .reduce((acc, d, i) => acc + d * (i % 2 === 0 ? 3 : 1), 0);
+
+  return (10 - (sum % 10)) % 10 === check;
+};
+
 export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   isOpen,
   onClose,
@@ -40,8 +59,12 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-  const detectIntervalRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
   const isProcessingRef = useRef(false);
+  const doneRef = useRef(false);
+  // Última lectura + cuántas veces seguidas se repitió (confirmación de códigos
+  // sin checksum verificable, p. ej. CODE_128).
+  const lastReadRef = useRef<{ code: string; hits: number }>({ code: '', hits: 0 });
 
   const scannerContainerId = 'superfood-barcode-reader';
 
@@ -49,7 +72,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const handleSuccess = useCallback(
     (decodedText: string) => {
       const clean = decodedText.trim();
-      if (!clean) return;
+      if (!clean || doneRef.current) return;
+      doneRef.current = true;
 
       playScanBeep();
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -67,11 +91,36 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     [onScan, onClose]
   );
 
+  /**
+   * Filtra la lectura cruda antes de darla por buena:
+   * - checksum EAN/UPC válido → se acepta al instante (rápido y preciso).
+   * - resto de formatos → se exige leer lo mismo 2 veces seguidas para no
+   *   meter un código mal decodificado en el input.
+   */
+  const handleCandidate = useCallback(
+    (raw: string) => {
+      const clean = raw.trim();
+      if (!clean || doneRef.current) return;
+
+      if (tieneChecksumValido(clean)) {
+        handleSuccess(clean);
+        return;
+      }
+
+      const last = lastReadRef.current;
+      const hits = last.code === clean ? last.hits + 1 : 1;
+      lastReadRef.current = { code: clean, hits };
+      if (hits >= 2) handleSuccess(clean);
+    },
+    [handleSuccess]
+  );
+
   const cleanupAll = useCallback(() => {
-    if (detectIntervalRef.current) {
-      clearInterval(detectIntervalRef.current);
-      detectIntervalRef.current = null;
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
+    lastReadRef.current = { code: '', hits: 0 };
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => {
@@ -115,11 +164,21 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       setCameraError(null);
 
       try {
+        const BD = window.BarcodeDetector;
+        if (!BD) throw new Error('BarcodeDetector no disponible');
+
+        // Solo pedimos los formatos que este navegador dice soportar: pasarle uno
+        // desconocido al constructor hace que lance y perdamos el motor rápido.
+        const soportados = await BD.getSupportedFormats();
+        const formats = SUPPORTED_FORMATS_BARCODE_DETECTOR.filter((f) => soportados.includes(f));
+        if (formats.length === 0) throw new Error('BarcodeDetector sin formatos útiles');
+
         const videoConstraints: MediaTrackConstraints = {
           facingMode: deviceId ? undefined : { ideal: 'environment' },
           deviceId: deviceId ? { exact: deviceId } : undefined,
-          width: { ideal: 1920, min: 1280 },
-          height: { ideal: 1080, min: 720 },
+          // 1280x720 decodifica un EAN-13 de sobra y llega a más fps que 1080p.
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
         };
 
         let stream: MediaStream;
@@ -146,51 +205,72 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             if ('torch' in caps) setTorchAvailable(true);
             if ('zoom' in caps) setZoomAvailable(true);
           }
+          // Enfoque continuo: sin esto la cámara se queda fija y las barras
+          // salen borrosas justo a la distancia a la que uno acerca el producto.
+          try {
+            await (track as unknown as { applyConstraints: (c: unknown) => Promise<void> }).applyConstraints({
+              advanced: [{ focusMode: 'continuous' }],
+            });
+          } catch {
+            /* la cámara no lo soporta */
+          }
         }
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+        const video = videoRef.current;
+        if (!video) throw new Error('El elemento <video> no está montado');
+
+        video.srcObject = stream;
+        await video.play();
+        // Esperamos a que haya un fotograma real: detectar sobre un vídeo con
+        // videoWidth 0 no devuelve nada nunca.
+        if (video.videoWidth === 0) {
+          await new Promise<void>((resolve) => {
+            const onReady = () => {
+              video.removeEventListener('loadeddata', onReady);
+              resolve();
+            };
+            video.addEventListener('loadeddata', onReady);
+            setTimeout(onReady, 3000);
+          });
         }
 
-        const detector = new window.BarcodeDetector!({
-          formats: SUPPORTED_FORMATS_BARCODE_DETECTOR,
-        });
+        const detector = new BD({ formats });
 
         setScanningEngine('native');
         setIsScanning(true);
 
-        // Continuous detection loop (~25 fps)
-        detectIntervalRef.current = window.setInterval(async () => {
-          if (
-            isProcessingRef.current ||
-            !videoRef.current ||
-            videoRef.current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
-          ) {
+        // Bucle de detección atado a requestAnimationFrame: va tan rápido como
+        // el dispositivo permita y no encola trabajo si un frame tarda.
+        const tick = async () => {
+          rafRef.current = requestAnimationFrame(tick);
+
+          const v = videoRef.current;
+          if (isProcessingRef.current || doneRef.current || !v || v.readyState < 2 || v.videoWidth === 0) {
             return;
           }
 
           isProcessingRef.current = true;
           try {
-            const barcodes = await detector.detect(videoRef.current);
-            if (barcodes && barcodes.length > 0) {
-              const detected = barcodes[0].rawValue;
-              if (detected) {
-                handleSuccess(detected);
-              }
+            const barcodes = await detector.detect(v);
+            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+              handleCandidate(barcodes[0].rawValue);
             }
           } catch {
             // Frame drop, ignore
           } finally {
             isProcessingRef.current = false;
           }
-        }, 70);
+        };
+        rafRef.current = requestAnimationFrame(tick);
       } catch (err: unknown) {
         console.warn('[Scanner] Error with native scanner, trying Html5Qrcode fallback:', err);
         startHtml5Scanner(deviceId);
       }
     },
-    [cleanupAll, handleSuccess]
+    // startHtml5Scanner se referencia por closure (se declara justo debajo y es
+    // estable); añadirlo aquí crearía una dependencia circular entre callbacks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cleanupAll, handleCandidate]
   );
 
   // ── Engine 2: Html5Qrcode Fallback (ZXing with optimized HD constraints) ──
@@ -219,18 +299,23 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         html5QrCodeRef.current = html5QrCode;
 
         const config = {
-          fps: 25,
+          // ZXing decodifica en JS puro: a 25 fps sobre 1080p no le da tiempo y
+          // se pierden fotogramas enteros. 15 fps sobre 720p rinde bastante más.
+          fps: 15,
           qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            const width = Math.max(260, Math.floor(viewfinderWidth * 0.88));
-            const height = Math.max(140, Math.floor(viewfinderHeight * 0.5));
+            // Zona de lectura casi completa: recortarla era la causa de que un
+            // código bien encuadrado quedara fuera del área analizada.
+            const width = Math.floor(viewfinderWidth * 0.96);
+            const height = Math.floor(viewfinderHeight * 0.75);
             return { width, height };
           },
           aspectRatio: undefined,
+          disableFlip: true,
           videoConstraints: {
             facingMode: deviceId ? undefined : { ideal: 'environment' },
             deviceId: deviceId ? { exact: deviceId } : undefined,
-            width: { ideal: 1920, min: 1280 },
-            height: { ideal: 1080, min: 720 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
           },
         };
 
@@ -240,12 +325,32 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           cameraToUse,
           config,
           (decodedText) => {
-            handleSuccess(decodedText);
+            handleCandidate(decodedText);
           },
           () => {
             // Ignore scan frame misses
           }
         );
+
+        // Enfoque continuo también en este motor (html5-qrcode crea su propio
+        // stream, así que hay que pedirle el track al <video> que inserta).
+        const innerVideo = document.querySelector<HTMLVideoElement>(`#${scannerContainerId} video`);
+        const track = (innerVideo?.srcObject as MediaStream | null)?.getVideoTracks()?.[0];
+        if (track) {
+          if ('getCapabilities' in track) {
+            const caps = (track.getCapabilities as () => MediaTrackCapabilities)();
+            if ('torch' in caps) setTorchAvailable(true);
+            if ('zoom' in caps) setZoomAvailable(true);
+          }
+          streamRef.current = (innerVideo!.srcObject as MediaStream);
+          try {
+            await (track as unknown as { applyConstraints: (c: unknown) => Promise<void> }).applyConstraints({
+              advanced: [{ focusMode: 'continuous' }],
+            });
+          } catch {
+            /* la cámara no lo soporta */
+          }
+        }
 
         setScanningEngine('html5');
         setIsScanning(true);
@@ -257,7 +362,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         setIsScanning(false);
       }
     },
-    [cleanupAll, handleSuccess]
+    [cleanupAll, handleCandidate]
   );
 
   // Initialize camera and start scanner
@@ -269,6 +374,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
     setCameraError(null);
     setIsScanning(false);
+    doneRef.current = false;
+    lastReadRef.current = { code: '', hits: 0 };
 
     // List cameras
     if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
@@ -422,21 +529,25 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         <div className="p-4 sm:p-5 overflow-y-auto space-y-3.5">
           {/* Camera Viewport Area */}
           <div className="relative overflow-hidden rounded-xl bg-black aspect-4/3 flex flex-col items-center justify-center border border-gray-800 shadow-inner">
-            {/* Native Video Element */}
-            {scanningEngine === 'native' ? (
-              <video
-                ref={videoRef}
-                playsInline
-                autoPlay
-                muted
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div
-                id={scannerContainerId}
-                className="w-full h-full object-cover [&>video]:w-full [&>video]:h-full [&>video]:object-cover"
-              />
-            )}
+            {/*
+              Ambos contenedores se montan siempre y se oculta el que no se usa.
+              Renderizar el <video> de forma condicional hacía que videoRef.current
+              fuese null justo cuando el motor nativo le asignaba el stream, así
+              que la cámara nunca llegaba a emitir un fotograma que analizar.
+            */}
+            <video
+              ref={videoRef}
+              playsInline
+              autoPlay
+              muted
+              className={`w-full h-full object-cover ${scanningEngine === 'native' ? '' : 'hidden'}`}
+            />
+            <div
+              id={scannerContainerId}
+              className={`w-full h-full object-cover [&>video]:w-full [&>video]:h-full [&>video]:object-cover ${
+                scanningEngine === 'native' ? 'hidden' : ''
+              }`}
+            />
 
             <div id="temp-file-scanner" className="hidden" />
 

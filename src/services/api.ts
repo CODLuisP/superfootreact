@@ -4,7 +4,12 @@ import { Product, User, UserRole } from '../types';
 
 async function req(url: string, opts: RequestInit = {}) {
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Connection': 'keep-alive',
+      ...(opts.headers || {}),
+    },
+    keepalive: true,
     ...opts,
   });
   if (!res.ok) {

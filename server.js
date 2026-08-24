@@ -246,6 +246,15 @@ function parseCookies(req) {
 }
 
 const app = express();
+app.disable('x-powered-by');
+
+// ─────────────── Keep-Alive Middleware ───────────────
+app.use((_req, res, next) => {
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Keep-Alive', 'timeout=65, max=1000');
+  next();
+});
+
 app.use(express.json({ limit: '12mb' })); // imágenes en base64
 
 // Sesión en req.session
@@ -266,7 +275,11 @@ function requireAdmin(req, res, next) { if (!req.session) return res.status(401)
 async function backend(pathname, { method = 'GET', body } = {}) {
   return fetch(`${BACKEND}${pathname}`, {
     method,
-    headers: { 'Content-Type': 'application/json', 'x-api-key': ADMIN_KEY },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ADMIN_KEY,
+      'Connection': 'keep-alive',
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -557,10 +570,12 @@ if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
 }
 
 if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`✔ BFF Superfood en http://localhost:${PORT}  → backend ${BACKEND}`);
     if (!CF_TOKEN) console.warn('  ⚠ Falta CLOUDFLARE_API_TOKEN: no se podrán subir imágenes.');
   });
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
 }
 
 export default app;
