@@ -414,22 +414,55 @@ app.post('/api/products', requireAuth, async (req, res) => {
 
 app.put('/api/products/:code', requireAuth, async (req, res) => {
   try {
-    const code = req.params.code;
-    const { name, image, status } = req.body || {};
-    const imagenUrl = await resolverImagen(code, image);
+    const oldCode = String(req.params.code).trim();
+    const { code: rawNewCode, newCode, name, image, status } = req.body || {};
+    const targetCode = String(rawNewCode || newCode || oldCode).trim();
+    if (!targetCode) return res.status(400).json({ error: 'El código de barras es obligatorio.' });
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'El nombre es obligatorio.' });
+
+    const imagenUrl = await resolverImagen(targetCode, image);
+
     if (status === 'pendiente') {
-      // Upsert en pendientes (el backend hace ON CONFLICT UPDATE).
-      const r = await backend('/admin/pendientes', { method: 'POST', body: { codigoBarras: code, nombre: name, imagenUrl, origen: req.session.username } });
+      // Upsert en pendientes con el targetCode
+      const r = await backend('/admin/pendientes', {
+        method: 'POST',
+        body: { codigoBarras: targetCode, nombre: String(name).trim(), imagenUrl, origen: req.session.username }
+      });
       const data = await r.json().catch(() => ({}));
       if (!r.ok && r.status !== 409) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
-      return res.json({ product: { id: code, code, name, image: imagenUrl || '', status: 'pendiente' } });
+
+      if (targetCode !== oldCode) {
+        await backend(`/admin/pendientes/${encodeURIComponent(oldCode)}`, { method: 'DELETE' }).catch(() => {});
+      }
+      return res.json({ product: { id: targetCode, code: targetCode, name: String(name).trim(), image: imagenUrl || '', status: 'pendiente' } });
     }
-    const r = await backend(`/admin/productos/${encodeURIComponent(code)}`, { method: 'PUT', body: { nombre: name, imagenUrl } });
-    const data = await r.json().catch(() => ({}));
-    if (r.status === 404) return res.status(404).json({ error: data.error || 'Producto no encontrado.' });
-    if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
-    res.json({ product: { id: code, code, name, image: imagenUrl || '', status: 'aprobado' } });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+
+    // Catálogo maestro ('aprobado'):
+    if (targetCode !== oldCode) {
+      // 1. Creamos / actualizamos con el nuevo código
+      const rCreate = await backend('/admin/productos', {
+        method: 'POST',
+        body: { codigoBarras: targetCode, nombre: String(name).trim(), imagenUrl }
+      });
+      const dataCreate = await rCreate.json().catch(() => ({}));
+      if (!rCreate.ok) return res.status(rCreate.status || 502).json({ error: dataCreate.error || `Error al actualizar producto (${rCreate.status}).` });
+
+      // 2. Eliminamos el código anterior
+      await backend(`/admin/productos/${encodeURIComponent(oldCode)}`, { method: 'DELETE' }).catch(() => {});
+    } else {
+      const r = await backend(`/admin/productos/${encodeURIComponent(oldCode)}`, {
+        method: 'PUT',
+        body: { nombre: String(name).trim(), imagenUrl }
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.status === 404) return res.status(404).json({ error: data.error || 'Producto no encontrado.' });
+      if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
+    }
+
+    res.json({ product: { id: targetCode, code: targetCode, name: String(name).trim(), image: imagenUrl || '', status: 'aprobado' } });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 app.delete('/api/products/:code', requireAuth, async (req, res) => {

@@ -59,7 +59,7 @@ export const api = {
     const d = await req('/api/products', { method: 'POST', body: JSON.stringify(p) });
     return d.product as Product;
   },
-  async updateProduct(code: string, p: { name: string; image?: string; status: 'aprobado' | 'pendiente' }): Promise<Product> {
+  async updateProduct(code: string, p: { code?: string; newCode?: string; name: string; image?: string; status: 'aprobado' | 'pendiente' }): Promise<Product> {
     const d = await req(`/api/products/${encodeURIComponent(code)}`, { method: 'PUT', body: JSON.stringify(p) });
     return d.product as Product;
   },
