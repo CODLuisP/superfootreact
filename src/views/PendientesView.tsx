@@ -7,6 +7,7 @@ import { ProductEditModal } from '../components/ProductEditModal';
 import { Pagination } from '../components/Pagination';
 import {
   AlertTriangle, CheckCircle2, Image as ImageIcon, Edit2, Trash2, UploadCloud, CheckCheck, PackageCheck, Clock, Sparkles, Search,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -121,28 +122,75 @@ export const PendientesView: React.FC<PendientesViewProps> = ({ currentUser, onC
         )}
       </div>
 
-      {/* Search + filter */}
-      <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-gray-200 shadow-sm mb-4 flex flex-col sm:flex-row gap-2.5 sm:items-center">
-        <div className="relative flex-1">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-            <Search className="h-3.5 w-3.5" />
+      <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-gray-200 shadow-sm mb-4">
+        <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center">
+          <div className="relative flex-1">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+              <Search className="h-3.5 w-3.5" />
+            </div>
+            <input
+              type="text"
+              placeholder="Buscar por nombre o código…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full rounded-xl border border-gray-300 pl-9 pr-4 py-2 text-xs text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition"
+            />
           </div>
-          <input
-            type="text"
-            placeholder="Buscar por nombre o código…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full rounded-xl border border-gray-300 pl-9 pr-4 py-2 text-xs text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition"
-          />
+          <button
+            type="button"
+            onClick={() => setOnlySinImagen((v) => !v)}
+            className={`shrink-0 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition inline-flex items-center gap-1.5 ${onlySinImagen ? 'bg-amber-600 text-white shadow-xs' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}
+          >
+            <ImageIcon className="h-3.5 w-3.5" />
+            <span>Solo sin imagen (esta página)</span>
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setOnlySinImagen((v) => !v)}
-          className={`shrink-0 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition inline-flex items-center gap-1.5 ${onlySinImagen ? 'bg-amber-600 text-white shadow-xs' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}
-        >
-          <ImageIcon className="h-3.5 w-3.5" />
-          <span>Solo sin imagen (esta página)</span>
-        </button>
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2.5 pt-2 border-t border-gray-100">
+          <div className="text-[11px] text-gray-500">
+            {loading ? (
+              <span className="text-gray-400">Cargando pendientes…</span>
+            ) : (
+              <span>
+                Mostrando <strong className="text-gray-800">{visibles.length ? page * PAGE_SIZE + 1 : 0}–{page * PAGE_SIZE + visibles.length}</strong> de <strong className="text-gray-800">{total.toLocaleString('es')}</strong> pendientes
+              </span>
+            )}
+          </div>
+
+          {/* Paginación Superior Rápida */}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5 self-end sm:self-auto">
+              <button
+                type="button"
+                disabled={page === 0 || loading}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                title="Página anterior"
+              >
+                <ChevronLeft className="h-3 w-3" />
+                <span>Anterior</span>
+              </button>
+
+              <div className="flex items-center gap-1 text-[11px] text-gray-600 px-1 font-medium">
+                <span>Pág.</span>
+                <span className="font-bold text-gray-900">{page + 1}</span>
+                <span>/</span>
+                <span className="font-bold text-gray-900">{totalPages.toLocaleString('es')}</span>
+              </div>
+
+              <button
+                type="button"
+                disabled={page + 1 >= totalPages || loading}
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                title="Página siguiente"
+              >
+                <span>Siguiente</span>
+                <ChevronRight className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Content */}
