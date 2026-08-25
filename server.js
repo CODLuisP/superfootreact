@@ -530,11 +530,8 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
       }
     } catch { /* noop */ }
 
-    // Limpieza en Cloudflare si se quitó la foto o cambió de código
+    // Limpieza en Cloudflare SOLO si el usuario quitó la foto explícitamente
     if (!image) {
-      if (oldImageUrl) await borrarImagenCloudflare(oldImageUrl);
-      await borrarImagenCloudflare(oldCode);
-    } else if (targetCode !== oldCode) {
       if (oldImageUrl) await borrarImagenCloudflare(oldImageUrl);
       await borrarImagenCloudflare(oldCode);
     }
