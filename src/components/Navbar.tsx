@@ -40,14 +40,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const navItems: { id: ActiveTab; label: string; icon: React.FC<{ className?: string }>; badge?: number; adminOnly?: boolean }[] = [
-    { id: 'cargar', label: 'Cargar', icon: Upload },
-    { id: 'gestionar', label: 'Gestionar', icon: Layers, badge: totalProductsCount },
-    { id: 'pendientes', label: 'Pendientes', icon: AlertTriangle, badge: pendingCount },
-    { id: 'usuarios', label: 'Usuarios', icon: Users, adminOnly: true },
+  const navItems: { id: ActiveTab; label: string; href: string; icon: React.FC<{ className?: string }>; badge?: number; adminOnly?: boolean }[] = [
+    { id: 'cargar', label: 'Cargar', href: '/cargar', icon: Upload },
+    { id: 'gestionar', label: 'Gestionar', href: '/gestionar', icon: Layers, badge: totalProductsCount },
+    { id: 'pendientes', label: 'Pendientes', href: '/pendientes', icon: AlertTriangle, badge: pendingCount },
+    { id: 'usuarios', label: 'Usuarios', href: '/usuarios', icon: Users, adminOnly: true },
   ];
 
-  const handleTabClick = (tabId: ActiveTab) => {
+  const handleTabClick = (e: React.MouseEvent, tabId: ActiveTab) => {
+    e.preventDefault();
     setActiveTab(tabId);
     setMobileMenuOpen(false);
   };
@@ -58,9 +59,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Left: Logo */}
           <div className="flex items-center gap-8">
-            <button
+            <a
               id="superfood-logo-button"
-              onClick={() => setActiveTab('cargar')}
+              href="/cargar"
+              onClick={(e) => handleTabClick(e, 'cargar')}
               className="flex items-center gap-2.5 group focus:outline-hidden"
             >
               <img
@@ -76,7 +78,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   Catálogo & Registro
                 </span>
               </div>
-            </button>
+            </a>
 
             {/* Desktop Navigation Links */}
             <nav className="hidden md:flex items-center gap-1.5" aria-label="Navegación principal">
@@ -86,10 +88,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 const isRestricted = item.adminOnly && !esAdmin(currentUser.role);
 
                 return (
-                  <button
+                  <a
                     key={item.id}
                     id={`nav-tab-${item.id}`}
-                    onClick={() => handleTabClick(item.id)}
+                    href={item.href}
+                    onClick={(e) => handleTabClick(e, item.id)}
                     className={`relative inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-colors ${
                       isActive
                         ? 'bg-emerald-50 text-emerald-700 font-semibold'
@@ -123,7 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {isActive && (
                       <span className="absolute -bottom-[17px] left-3 right-3 h-0.5 bg-emerald-600 rounded-full" />
                     )}
-                  </button>
+                  </a>
                 );
               })}
             </nav>
@@ -204,9 +207,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
-                <button
+                <a
                   key={item.id}
-                  onClick={() => handleTabClick(item.id)}
+                  href={item.href}
+                  onClick={(e) => handleTabClick(e, item.id)}
                   className={`flex items-center gap-2 p-2.5 rounded-xl text-xs font-medium ${
                     isActive
                       ? 'bg-emerald-600 text-white'
@@ -226,7 +230,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {item.badge}
                     </span>
                   )}
-                </button>
+                </a>
               );
             })}
           </div>

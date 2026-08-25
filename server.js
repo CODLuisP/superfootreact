@@ -257,6 +257,26 @@ app.use((_req, res, next) => {
 
 app.use(express.json({ limit: '12mb' })); // imágenes en base64
 
+// Logger de APIs en consola del servidor
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    const start = Date.now();
+    res.on('finish', () => {
+      const ms = Date.now() - start;
+      let payloadLog = '';
+      if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+        const copy = { ...req.body };
+        if (typeof copy.image === 'string' && copy.image.startsWith('data:')) {
+          copy.image = `[Base64 image (~${Math.round(copy.image.length / 1024)} KB)]`;
+        }
+        payloadLog = ' | Datos: ' + JSON.stringify(copy);
+      }
+      console.log(`[API ${req.method}] ${req.originalUrl} -> ${res.statusCode} (${ms}ms)${payloadLog}`);
+    });
+  }
+  next();
+});
+
 // Sesión en req.session
 app.use((req, _res, next) => { req.session = readToken(parseCookies(req)[COOKIE]); next(); });
 function setCookie(res, payload) {

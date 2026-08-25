@@ -13,15 +13,35 @@ import { GestionarView } from './views/GestionarView';
 import { PendientesView } from './views/PendientesView';
 import { UsuariosView } from './views/UsuariosView';
 
+function getTabFromPath(pathname: string): ActiveTab {
+  const clean = pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+  if (clean === 'gestionar') return 'gestionar';
+  if (clean === 'pendientes') return 'pendientes';
+  if (clean === 'usuarios') return 'usuarios';
+  return 'cargar';
+}
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [booting, setBooting] = useState(true);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('cargar');
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(() => getTabFromPath(window.location.pathname));
 
   // Solo contadores livianos para los badges (nunca el catálogo completo:
   // con miles de productos eso saturaría memoria/red). Cada vista pagina
   // sus propios datos por su cuenta.
   const [counts, setCounts] = useState({ total: 0, pending: 0 });
+
+  const navigateToTab = useCallback((tab: ActiveTab, replace = false) => {
+    setActiveTabState(tab);
+    const targetPath = `/${tab}`;
+    if (window.location.pathname !== targetPath) {
+      if (replace) {
+        window.history.replaceState(null, '', targetPath);
+      } else {
+        window.history.pushState(null, '', targetPath);
+      }
+    }
+  }, []);
 
   const refreshCounts = useCallback(async () => {
     try {
@@ -36,20 +56,36 @@ export default function App() {
     (async () => {
       const u = await api.me();
       setCurrentUser(u);
-      if (u) await refreshCounts();
+      if (u) {
+        await refreshCounts();
+        const initialTab = getTabFromPath(window.location.pathname);
+        navigateToTab(initialTab, true);
+      }
       setBooting(false);
     })();
-  }, [refreshCounts]);
+  }, [refreshCounts, navigateToTab]);
+
+  // Escuchar botones Atrás / Adelante del navegador
+  useEffect(() => {
+    const handlePopState = () => {
+      const tab = getTabFromPath(window.location.pathname);
+      setActiveTabState(tab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const handleLogout = async () => {
     await api.logout().catch(() => {});
     setCurrentUser(null);
     setCounts({ total: 0, pending: 0 });
+    window.history.replaceState(null, '', '/');
   };
 
   const handleLoginSuccess = async (user: User) => {
     setCurrentUser(user);
-    setActiveTab('cargar');
+    const initialTab = getTabFromPath(window.location.pathname);
+    navigateToTab(initialTab, true);
     await refreshCounts();
   };
 
@@ -76,7 +112,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans text-gray-800 selection:bg-emerald-100 selection:text-emerald-900">
       <Navbar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={(tab) => navigateToTab(tab)}
         currentUser={currentUser}
         onLogout={handleLogout}
         pendingCount={counts.pending}
@@ -88,7 +124,7 @@ export default function App() {
           <CargarView
             currentUser={currentUser}
             onProductSaved={() => refreshCounts()}
-            onNavigateToCatalog={() => setActiveTab('gestionar')}
+            onNavigateToCatalog={() => navigateToTab('gestionar')}
           />
         )}
 
@@ -96,7 +132,7 @@ export default function App() {
           <GestionarView
             currentUser={currentUser}
             onCountsChange={refreshCounts}
-            onNavigateToCargar={() => setActiveTab('cargar')}
+            onNavigateToCargar={() => navigateToTab('cargar')}
           />
         )}
 
@@ -104,7 +140,7 @@ export default function App() {
           <PendientesView
             currentUser={currentUser}
             onCountsChange={refreshCounts}
-            onNavigateToCargar={() => setActiveTab('cargar')}
+            onNavigateToCargar={() => navigateToTab('cargar')}
           />
         )}
 

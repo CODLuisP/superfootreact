@@ -3,6 +3,51 @@ import { Product, User, UserRole } from '../types';
 /** Cliente de las APIs del panel (todas pasan por el BFF en /api). */
 
 async function req(url: string, opts: RequestInit = {}) {
+  const method = (opts.method || 'GET').toUpperCase();
+
+  let parsedBody: unknown = null;
+  if (opts.body && typeof opts.body === 'string') {
+    try {
+      const raw = JSON.parse(opts.body);
+      if (raw && typeof raw === 'object') {
+        const copy = { ...(raw as Record<string, unknown>) };
+        if (typeof copy.image === 'string' && copy.image.startsWith('data:')) {
+          copy.image = `[Base64 image (~${Math.round(copy.image.length / 1024)} KB)]`;
+        }
+        parsedBody = copy;
+      } else {
+        parsedBody = raw;
+      }
+    } catch {
+      parsedBody = opts.body;
+    }
+  }
+
+  const badgeColor =
+    method === 'GET'
+      ? '#0284c7'
+      : method === 'POST'
+      ? '#16a34a'
+      : method === 'PUT'
+      ? '#d97706'
+      : '#dc2626';
+
+  if (parsedBody) {
+    console.log(
+      `%c[API ${method}]%c ${url}`,
+      `background: ${badgeColor}; color: white; padding: 2px 5px; border-radius: 4px; font-weight: bold; font-size: 11px;`,
+      'font-weight: bold; color: inherit;',
+      '| Datos enviados:',
+      parsedBody
+    );
+  } else {
+    console.log(
+      `%c[API ${method}]%c ${url}`,
+      `background: ${badgeColor}; color: white; padding: 2px 5px; border-radius: 4px; font-weight: bold; font-size: 11px;`,
+      'font-weight: bold; color: inherit;'
+    );
+  }
+
   const res = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
@@ -16,6 +61,12 @@ async function req(url: string, opts: RequestInit = {}) {
       const d = await res.json();
       if (d?.error) msg = d.error;
     } catch { /* sin cuerpo */ }
+    console.error(
+      `%c[API ERROR ${res.status}]%c ${url}`,
+      'background: #dc2626; color: white; padding: 2px 5px; border-radius: 4px; font-weight: bold; font-size: 11px;',
+      'font-weight: bold;',
+      msg
+    );
     const e = new Error(msg) as Error & { status?: number };
     e.status = res.status;
     throw e;
