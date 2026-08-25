@@ -22,7 +22,7 @@ const BATCH_SIZE = 40;
 export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCountsChange, onNavigateToCargar }) => {
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('grid');
 
   const [items, setItems] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
@@ -270,9 +270,9 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
               {items.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-50/80 transition group">
                   <td className="px-3.5 py-1.5">
-                    <div className="h-9 w-9 rounded-lg bg-gray-100 border border-gray-200 overflow-hidden shrink-0 flex items-center justify-center">
+                    <div className="h-10 w-10 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden shrink-0 flex items-center justify-center p-0.5">
                       {p.image ? (
-                        <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-cover" />
+                        <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-contain" />
                       ) : (
                         <span className="text-[8px] text-gray-400 font-medium text-center px-0.5">Sin foto</span>
                       )}
@@ -298,22 +298,22 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
             {items.map((p) => (
               <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-2xs hover:shadow-md transition-shadow flex flex-col justify-between">
                 <div>
-                  <div className="relative h-24 w-full bg-gray-50 border-b border-gray-100 flex items-center justify-center overflow-hidden">
+                  <div className="relative h-36 sm:h-40 w-full bg-gray-50/60 border-b border-gray-100 flex items-center justify-center p-2 overflow-hidden">
                     {p.image ? (
-                      <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-cover hover:scale-105 transition-transform duration-300" />
+                      <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-contain hover:scale-105 transition-transform duration-300" />
                     ) : (
-                      <div className="text-center p-2 text-gray-400 text-[10px]"><PackageX className="h-5 w-5 mx-auto mb-0.5 opacity-50" /><span>Sin imagen</span></div>
+                      <div className="text-center p-2 text-gray-400 text-[10px]"><PackageX className="h-6 w-6 mx-auto mb-1 opacity-40" /><span>Sin imagen</span></div>
                     )}
                     <div className="absolute top-1.5 right-1.5">
-                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-bold bg-emerald-600/90 text-white shadow-xs backdrop-blur-xs"><CheckCircle2 className="h-2 w-2" /> Aprobado</span>
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-600/90 text-white shadow-xs backdrop-blur-xs"><CheckCircle2 className="h-2.5 w-2.5" /> Aprobado</span>
                     </div>
                   </div>
-                  <div className="p-2 space-y-1">
-                    <h3 className="font-bold text-gray-900 text-[11px] line-clamp-2 leading-tight" title={p.name}>{p.name}</h3>
+                  <div className="p-2.5 space-y-1">
+                    <h3 className="font-bold text-gray-900 text-xs line-clamp-2 leading-tight" title={p.name}>{p.name}</h3>
                     <div><BarcodeBadge code={p.code} /></div>
                   </div>
                 </div>
-                <div className="px-2 py-1.5 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
+                <div className="px-2.5 py-1.5 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
                   <span className="text-[9px] text-gray-400">{formatDate(p.createdAt)}</span>
                   <div className="flex items-center gap-0.5">
                     <button type="button" onClick={() => setEditingProduct(p)} className="p-1 rounded-md text-gray-600 hover:bg-emerald-100 hover:text-emerald-700 transition" title="Editar"><Edit2 className="h-3 w-3" /></button>

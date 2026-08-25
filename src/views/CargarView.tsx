@@ -342,8 +342,8 @@ export const CargarView: React.FC<CargarViewProps> = ({
           >
             {image ? (
               <div className="p-2.5 flex items-center gap-3.5">
-                <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-white border border-gray-200 shadow-2xs shrink-0">
-                  <img src={image} alt="Vista previa del producto" className="h-full w-full object-cover" />
+                <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-white border border-gray-200 shadow-2xs shrink-0 p-1 flex items-center justify-center">
+                  <img src={image} alt="Vista previa del producto" className="h-full w-full object-contain" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">
@@ -434,9 +434,9 @@ export const CargarView: React.FC<CargarViewProps> = ({
             {!checkingCode && existingProduct && (
               <div className="mt-2 rounded-xl bg-amber-50 border border-amber-300 p-2.5 flex items-center justify-between gap-2.5 text-xs animate-in fade-in">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="h-10 w-10 rounded-lg bg-white border border-amber-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
+                  <div className="h-10 w-10 rounded-lg bg-white border border-amber-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs p-0.5">
                     {existingProduct.image ? (
-                      <img src={existingProduct.image} alt={existingProduct.name} className="h-full w-full object-cover" />
+                      <img src={existingProduct.image} alt={existingProduct.name} className="h-full w-full object-contain" />
                     ) : (
                       <span className="text-[8px] text-amber-700 font-bold">Sin foto</span>
                     )}

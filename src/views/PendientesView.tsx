@@ -226,9 +226,9 @@ export const PendientesView: React.FC<PendientesViewProps> = ({ currentUser, onC
 
                   <div className="p-3.5 space-y-2.5">
                     <div className="flex gap-3">
-                      <div className="relative h-16 w-16 rounded-lg bg-gray-50 border border-dashed border-gray-300 overflow-hidden flex items-center justify-center shrink-0 group">
+                      <div className="relative h-16 w-16 rounded-lg bg-gray-50 border border-dashed border-gray-300 overflow-hidden flex items-center justify-center shrink-0 group p-0.5">
                         {p.image ? (
-                          <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-cover" />
+                          <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-contain" />
                         ) : (
                           <label className="cursor-pointer flex flex-col items-center justify-center p-1 text-center text-[9px] text-gray-400 group-hover:text-emerald-700">
                             <UploadCloud className="h-4 w-4 mb-0.5" />

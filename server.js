@@ -285,30 +285,60 @@ async function backend(pathname, { method = 'GET', body } = {}) {
 }
 
 // ─────────────── Cloudflare Images ───────────────
-async function subirImagenBase64(code, dataUrl) {
+function extraerIdCloudflare(url) {
+  if (!url || typeof url !== 'string') return null;
+  const m = /imagedelivery\.net\/[^/]+\/([^/?#]+)/i.exec(url);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+async function borrarImagenCloudflare(idOrUrl) {
+  if (!CF_ACCOUNT || !CF_TOKEN || !idOrUrl) return;
+  const id = extraerIdCloudflare(idOrUrl) || idOrUrl;
+  try {
+    await fetch(`${CF_BASE}/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${CF_TOKEN}` },
+    });
+  } catch (e) {
+    console.warn(`[cf-delete] No se pudo borrar ${id}:`, e.message);
+  }
+}
+
+async function subirImagenBase64(code, dataUrl, oldImageUrl) {
   if (!CF_ACCOUNT || !CF_TOKEN) throw new Error('Faltan credenciales de Cloudflare en el .env del servidor.');
   const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(dataUrl);
   if (!m) throw new Error('Imagen inválida.');
   const buf = Buffer.from(m[2], 'base64');
-  // Reemplazo: borrar id previo (si existe) y volver a subir.
-  await fetch(`${CF_BASE}/${encodeURIComponent(code)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${CF_TOKEN}` } }).catch(() => {});
+
+  // ID único con timestamp: evita conflictos 409 de Cloudflare y garantiza actualización inmediata en navegador
+  const newId = `${code}_${Date.now()}`;
   const form = new FormData();
-  form.append('file', new Blob([buf], { type: m[1] }), `${code}`);
-  form.append('id', String(code));
-  const res = await fetch(CF_BASE, { method: 'POST', headers: { Authorization: `Bearer ${CF_TOKEN}` }, body: form });
+  form.append('file', new Blob([buf], { type: m[1] }), `${newId}`);
+  form.append('id', String(newId));
+
+  const res = await fetch(CF_BASE, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${CF_TOKEN}` },
+    body: form,
+  });
   const data = await res.json();
-  if (!data.success) throw new Error('Cloudflare rechazó la imagen: ' + JSON.stringify(data.errors));
+  if (!data.success) {
+    throw new Error('Cloudflare rechazó la imagen: ' + JSON.stringify(data.errors));
+  }
+
+  // Eliminar la imagen anterior de Cloudflare si existía
+  if (oldImageUrl) {
+    borrarImagenCloudflare(oldImageUrl).catch(() => {});
+  }
+  borrarImagenCloudflare(code).catch(() => {});
+
   return data.result.variants[0];
-}
-async function borrarImagen(code) {
-  if (!CF_ACCOUNT || !CF_TOKEN) return;
-  await fetch(`${CF_BASE}/${encodeURIComponent(code)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${CF_TOKEN}` } }).catch(() => {});
 }
 
 // Resuelve el campo image del cliente a una URL final (o null).
-async function resolverImagen(code, image) {
+async function resolverImagen(code, image, oldImageUrl) {
   if (!image) return null;
-  if (image.startsWith('data:')) return await subirImagenBase64(code, image);
+  if (image.startsWith('data:')) return await subirImagenBase64(code, image, oldImageUrl);
   if (image.startsWith('http')) return image; // ya era una URL (sin cambios)
   return null;
 }
@@ -412,7 +442,7 @@ app.post('/api/products', requireAuth, async (req, res) => {
       }
     }
 
-    const imagenUrl = await resolverImagen(cleanCode, image);
+    const imagenUrl = await resolverImagen(cleanCode, image, null);
 
     if (status === 'pendiente') {
       const r = await backend('/admin/pendientes', {
@@ -468,7 +498,28 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
       }
     }
 
-    const imagenUrl = await resolverImagen(targetCode, image);
+    // Buscar imagen anterior del producto para saber cuál borrar en Cloudflare
+    let oldImageUrl = null;
+    try {
+      const checkPath = status === 'pendiente' ? `/admin/pendientes?buscar=${encodeURIComponent(oldCode)}&limit=1` : `/admin/productos?q=${encodeURIComponent(oldCode)}&limit=1`;
+      const rCurrent = await backend(checkPath, {});
+      if (rCurrent.ok) {
+        const dataCurrent = await rCurrent.json().catch(() => ({}));
+        const found = (dataCurrent.items || []).find((p) => String(p.codigoBarras || p.codigo_barras).trim() === oldCode);
+        if (found) oldImageUrl = found.imagenUrl || found.imagen_url || null;
+      }
+    } catch { /* noop */ }
+
+    // Limpieza en Cloudflare si se quitó la foto o cambió de código
+    if (!image) {
+      if (oldImageUrl) await borrarImagenCloudflare(oldImageUrl);
+      await borrarImagenCloudflare(oldCode);
+    } else if (targetCode !== oldCode) {
+      if (oldImageUrl) await borrarImagenCloudflare(oldImageUrl);
+      await borrarImagenCloudflare(oldCode);
+    }
+
+    const imagenUrl = await resolverImagen(targetCode, image, oldImageUrl);
 
     if (status === 'pendiente') {
       // Upsert en pendientes con el targetCode
@@ -516,9 +567,24 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
 app.delete('/api/products/:code', requireAuth, async (req, res) => {
   const code = req.params.code;
   const status = req.query.status;
+
+  let oldImageUrl = null;
+  try {
+    const checkPath = status === 'pendiente' ? `/admin/pendientes?buscar=${encodeURIComponent(code)}&limit=1` : `/admin/productos?q=${encodeURIComponent(code)}&limit=1`;
+    const rCurrent = await backend(checkPath, {});
+    if (rCurrent.ok) {
+      const dataCurrent = await rCurrent.json().catch(() => ({}));
+      const found = (dataCurrent.items || []).find((p) => String(p.codigoBarras || p.codigo_barras).trim() === code);
+      if (found) oldImageUrl = found.imagenUrl || found.imagen_url || null;
+    }
+  } catch { /* noop */ }
+
   const route = status === 'pendiente' ? `/admin/pendientes/${encodeURIComponent(code)}` : `/admin/productos/${encodeURIComponent(code)}`;
   const r = await backend(route, { method: 'DELETE' });
-  await borrarImagen(code); // limpia la imagen en Cloudflare
+
+  if (oldImageUrl) await borrarImagenCloudflare(oldImageUrl);
+  await borrarImagenCloudflare(code);
+
   const data = await r.json().catch(() => ({}));
   if (!r.ok && r.status !== 404) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
   res.json({ ok: true });

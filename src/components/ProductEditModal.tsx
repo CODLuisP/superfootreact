@@ -28,6 +28,7 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
   const [imageFileName, setImageFileName] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,11 +60,33 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
     const reader = new FileReader();
     reader.onload = (e) => {
       setImage(e.target?.result as string);
-      setImageFileName(file.name);
+      setImageFileName(file.name || 'imagen-pegada.png');
       setError(null);
     };
     reader.readAsDataURL(file);
   };
+
+  // Listener para pegar imagen con Ctrl + V mientras el modal esté abierto
+  useEffect(() => {
+    if (!isOpen) return;
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile();
+          if (blob) {
+            e.preventDefault();
+            handleImageFile(blob);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [isOpen]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,16 +163,27 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
             <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-700 mb-1.5">
               Fotografía del Producto
             </label>
-            <div className="flex items-center gap-3.5 p-2.5 rounded-xl border border-gray-200 bg-gray-50/60">
-              <div className="relative h-18 w-18 rounded-lg border border-gray-200 overflow-hidden bg-white shrink-0 flex items-center justify-center shadow-2xs">
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                if (e.dataTransfer.files?.length) handleImageFile(e.dataTransfer.files[0]);
+              }}
+              className={`flex items-center gap-3.5 p-3 rounded-xl border-2 transition-all ${
+                isDragging ? 'border-emerald-500 bg-emerald-50/70' : 'border-gray-200 bg-gray-50/60'
+              }`}
+            >
+              <div className="relative h-20 w-20 rounded-lg border border-gray-200 overflow-hidden bg-white shrink-0 flex items-center justify-center shadow-2xs p-1">
                 {image ? (
-                  <img src={image} alt="Vista previa" className="h-full w-full object-cover" />
+                  <img src={image} alt="Vista previa" className="h-full w-full object-contain" />
                 ) : (
                   <span className="text-[10px] text-gray-400 font-medium">Sin foto</span>
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
@@ -161,7 +195,7 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
                   {image && (
                     <button
                       type="button"
-                      onClick={() => setImage('')}
+                      onClick={() => { setImage(''); setImageFileName(''); }}
                       className="rounded-lg bg-red-50 hover:bg-red-100 text-red-600 px-2.5 py-1 text-xs font-semibold transition inline-flex items-center gap-1"
                     >
                       <Trash2 className="h-3 w-3" />
@@ -169,8 +203,14 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
                     </button>
                   )}
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1 truncate">
-                  {imageFileName || 'JPG, PNG, WebP, GIF (sin .ico)'}
+                <p className="text-[10px] text-gray-500 mt-1 truncate">
+                  {imageFileName ? (
+                    <span className="font-medium text-emerald-700">{imageFileName}</span>
+                  ) : (
+                    <span>
+                      Arrastra, explora o pega con <kbd className="px-1 py-0.5 bg-white border border-gray-200 rounded text-[9px] font-mono text-gray-700 shadow-2xs">Ctrl + V</kbd>
+                    </span>
+                  )}
                 </p>
               </div>
               <input
