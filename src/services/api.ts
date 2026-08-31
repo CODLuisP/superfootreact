@@ -92,10 +92,11 @@ export const api = {
   logout: () => req('/api/logout', { method: 'POST' }),
 
   // ── Productos (paginado: nunca trae el catálogo completo) ──
-  async getProductsPage(params: { status?: 'aprobado' | 'pendiente'; buscar?: string; limit?: number; offset?: number }): Promise<{ items: Product[]; total: number }> {
+  async getProductsPage(params: { status?: 'aprobado' | 'pendiente'; buscar?: string; codigoPrefix?: string; limit?: number; offset?: number }): Promise<{ items: Product[]; total: number }> {
     const qs = new URLSearchParams();
     qs.set('status', params.status ?? 'aprobado');
     if (params.buscar) qs.set('buscar', params.buscar);
+    if (params.codigoPrefix) qs.set('codigoPrefix', params.codigoPrefix);
     qs.set('limit', String(params.limit ?? 20));
     qs.set('offset', String(params.offset ?? 0));
     const d = await req(`/api/products?${qs}`);
@@ -114,6 +115,8 @@ export const api = {
   },
   deleteProduct: (code: string, status: 'aprobado' | 'pendiente') =>
     req(`/api/products/${encodeURIComponent(code)}?status=${status}`, { method: 'DELETE' }),
+  deleteProducts: (codes: string[], status: 'aprobado' | 'pendiente'): Promise<{ ok: boolean; count: number; deleted: string[]; errors: any[] }> =>
+    req('/api/products/delete-many', { method: 'POST', body: JSON.stringify({ codes, status }) }),
   approve: (code: string) => req(`/api/products/${encodeURIComponent(code)}/approve`, { method: 'POST' }),
 
   /** Importación masiva: crea/actualiza en el maestro en un solo llamado (el BFF trocea internamente). */

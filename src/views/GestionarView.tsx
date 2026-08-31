@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { BarcodeBadge } from '../components/BarcodeBadge';
 import { ProductEditModal } from '../components/ProductEditModal';
 import {
-  Search, Grid, List, Edit2, Trash2, FileText, FileSpreadsheet, FileType, CheckCircle2, Plus, PackageX, Upload, Loader2,
+  Search, Grid, List, Edit2, Trash2, FileText, FileSpreadsheet, FileType, CheckCircle2, Plus, PackageX, Upload, Loader2, Barcode, X,
 } from 'lucide-react';
 
 const ImportarExcelModal = React.lazy(() =>
@@ -22,6 +22,8 @@ const BATCH_SIZE = 40;
 export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCountsChange, onNavigateToCargar }) => {
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [prefixInput, setPrefixInput] = useState('');
+  const [barcodePrefix, setBarcodePrefix] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('grid');
 
   const [items, setItems] = useState<Product[]>([]);
@@ -30,12 +32,48 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Selección múltiple
+  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
+  const [showBatchDeleteModal, setShowBatchDeleteModal] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
+
+  // Funciones de selección
+  const toggleSelect = (code: string) => {
+    setSelectedCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  const allVisibleSelected = items.length > 0 && items.every((p) => selectedCodes.has(p.code));
+  const someVisibleSelected = items.some((p) => selectedCodes.has(p.code));
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedCodes((prev) => {
+        const next = new Set(prev);
+        items.forEach((p) => next.delete(p.code));
+        return next;
+      });
+    } else {
+      setSelectedCodes((prev) => {
+        const next = new Set(prev);
+        items.forEach((p) => next.add(p.code));
+        return next;
+      });
+    }
+  };
+
+  const clearSelection = () => setSelectedCodes(new Set());
 
   // Debounce search
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,6 +85,16 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [searchInput]);
 
+  // Debounce barcode prefix filter
+  const prefixDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (prefixDebounceRef.current) clearTimeout(prefixDebounceRef.current);
+    prefixDebounceRef.current = setTimeout(() => {
+      setBarcodePrefix(prefixInput.trim());
+    }, 250);
+    return () => { if (prefixDebounceRef.current) clearTimeout(prefixDebounceRef.current); };
+  }, [prefixInput]);
+
   // Cargar primera página (reemplaza lista)
   const cargarInicial = useCallback(async () => {
     setInitialLoading(true);
@@ -55,6 +103,7 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
       const { items: newItems, total: newTotal } = await api.getProductsPage({
         status: 'aprobado',
         buscar: searchTerm || undefined,
+        codigoPrefix: barcodePrefix || undefined,
         limit: BATCH_SIZE,
         offset: 0,
       });
@@ -68,7 +117,7 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
     } finally {
       setInitialLoading(false);
     }
-  }, [searchTerm]);
+  }, [searchTerm, barcodePrefix]);
 
   useEffect(() => {
     cargarInicial();
@@ -85,6 +134,7 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
       const { items: newItems, total: newTotal } = await api.getProductsPage({
         status: 'aprobado',
         buscar: searchTerm || undefined,
+        codigoPrefix: barcodePrefix || undefined,
         limit: BATCH_SIZE,
         offset: items.length,
       });
@@ -96,7 +146,7 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [items.length, total, initialLoading, searchTerm]);
+  }, [items.length, total, initialLoading, searchTerm, barcodePrefix]);
 
   // Listener de scroll interno en la tabla/grilla
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -109,9 +159,35 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
   const handleDelete = async (product: Product) => {
     await api.deleteProduct(product.code, 'aprobado');
     setProductToDelete(null);
+    setSelectedCodes((prev) => {
+      const next = new Set(prev);
+      next.delete(product.code);
+      return next;
+    });
     setItems((prev) => prev.filter((p) => p.code !== product.code));
     setTotal((prev) => Math.max(0, prev - 1));
     onCountsChange();
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedCodes.size === 0) return;
+    setBatchDeleting(true);
+    try {
+      const codesToDelete = Array.from(selectedCodes);
+      const res = await api.deleteProducts(codesToDelete, 'aprobado');
+      const count = res.count || codesToDelete.length;
+      setItems((prev) => prev.filter((p) => !selectedCodes.has(p.code)));
+      setTotal((prev) => Math.max(0, prev - count));
+      setSelectedCodes(new Set());
+      setShowBatchDeleteModal(false);
+      onCountsChange();
+      setExportMsg(`✓ Se eliminaron ${count.toLocaleString('es')} producto(s) correctamente del catálogo.`);
+    } catch (err) {
+      setExportMsg(`No se pudieron eliminar los productos: ${(err as Error).message}`);
+    } finally {
+      setBatchDeleting(false);
+      setTimeout(() => setExportMsg(null), 5000);
+    }
   };
 
   const [exportando, setExportando] = useState<'csv' | 'excel' | 'pdf' | null>(null);
@@ -123,7 +199,7 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
     try {
       const mod = await import('../utils/exportCatalogo');
       const fn = formato === 'csv' ? mod.exportarCSV : formato === 'excel' ? mod.exportarExcel : mod.exportarPDF;
-      const n = await fn(searchTerm || undefined);
+      const n = await fn(searchTerm || undefined, barcodePrefix || undefined);
       setExportMsg(`✓ ${n.toLocaleString('es')} producto(s) exportado(s) a ${formato.toUpperCase()}.`);
     } catch (err) {
       setExportMsg(`No se pudo exportar: ${(err as Error).message}`);
@@ -202,8 +278,8 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
         </div>
       )}
 
-      {/* Search Box (Fixed, doesn't scroll) */}
-      <div className="bg-white rounded-xl p-3 border border-gray-200 shadow-2xs mb-2.5 shrink-0">
+      {/* Search & Barcode Prefix Filter Box (Fixed, doesn't scroll) */}
+      <div className="bg-white rounded-xl p-3 border border-gray-200 shadow-2xs mb-2.5 shrink-0 space-y-2.5">
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <div className="relative flex-1">
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
@@ -215,7 +291,7 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
               placeholder="Buscar por nombre o código de barras… (búsqueda instantánea)"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 pl-9 pr-4 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition"
+              className="w-full rounded-lg border border-gray-300 pl-9 pr-14 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition"
             />
             {searchInput && (
               <button type="button" onClick={() => setSearchInput('')} className="absolute inset-y-0 right-0 flex items-center pr-3 text-xs text-gray-400 hover:text-gray-600">Limpiar</button>
@@ -232,6 +308,111 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
             </div>
           </div>
         </div>
+
+        {/* Barcode Prefix Filter Controls */}
+        <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex items-center gap-1 text-gray-700 font-bold shrink-0 text-xs mr-1">
+              <Barcode className="h-4 w-4 text-emerald-600" />
+              <span className="text-[11px] text-gray-700">Código inicia con:</span>
+            </div>
+
+            {/* Presets: Todos, 7..., 1..., 0..., 2..., 3..., etc. */}
+            <button
+              type="button"
+              onClick={() => {
+                setPrefixInput('');
+                setBarcodePrefix('');
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                !barcodePrefix
+                  ? 'bg-emerald-600 text-white shadow-2xs font-bold'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Todos
+            </button>
+
+            {[
+              { label: '7…', val: '7' },
+              { label: '1…', val: '1' },
+              { label: '2…', val: '2' },
+              { label: '0…', val: '0' },
+              { label: '3…', val: '3' },
+              { label: '4…', val: '4' },
+              { label: '5…', val: '5' },
+              { label: '6…', val: '6' },
+              { label: '8…', val: '8' },
+              { label: '9…', val: '9' },
+            ].map((p) => (
+              <button
+                key={p.val}
+                type="button"
+                onClick={() => {
+                  setPrefixInput(p.val);
+                  setBarcodePrefix(p.val);
+                }}
+                className={`px-2 py-1 rounded-lg text-xs font-mono font-bold transition cursor-pointer ${
+                  barcodePrefix === p.val
+                    ? 'bg-emerald-600 text-white shadow-2xs ring-2 ring-emerald-600/30'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                title={`Filtrar productos cuyo código empieza por ${p.val}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Custom Prefix / Any Number Input */}
+          <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+            <span className="text-[10px] uppercase font-bold text-gray-400">Personalizado:</span>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Ej. 775, 12, 70…"
+                value={prefixInput}
+                onChange={(e) => setPrefixInput(e.target.value.trim())}
+                className="w-32 rounded-lg border border-gray-300 pl-2.5 pr-6 py-1 text-xs font-mono text-gray-900 placeholder:text-gray-400 placeholder:font-sans focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition bg-white"
+              />
+              {prefixInput && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrefixInput('');
+                    setBarcodePrefix('');
+                  }}
+                  className="absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                  title="Quitar filtro de código"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            {barcodePrefix && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPrefixInput('');
+                  setBarcodePrefix('');
+                }}
+                className="text-[11px] text-red-600 hover:text-red-700 hover:underline font-medium cursor-pointer"
+              >
+                Quitar
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Indicador de filtro de código activo */}
+        {barcodePrefix && (
+          <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-lg">
+            <span className="font-semibold">Filtro de código activo:</span>
+            <span>Empieza con <strong className="font-mono text-emerald-900 bg-emerald-100/70 px-1 py-0.5 rounded">{barcodePrefix}</strong></span>
+            <span className="text-gray-400">·</span>
+            <span>{initialLoading ? 'Buscando…' : `${total.toLocaleString('es')} coincidencia${total === 1 ? '' : 's'}`}</span>
+          </div>
+        )}
       </div>
 
       {loadError && <div className="mb-2.5 rounded-xl bg-red-50 border border-red-200 p-2 text-xs text-red-700 shrink-0">{loadError}</div>}
@@ -252,13 +433,45 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
             <div className="h-10 w-10 rounded-xl bg-gray-100 text-gray-400 flex items-center justify-center mx-auto mb-2"><PackageX className="h-6 w-6" /></div>
             <h3 className="text-sm font-bold text-gray-900">No se encontraron productos</h3>
             <p className="text-xs text-gray-500 mt-0.5 max-w-sm mx-auto">
-              {searchTerm ? `No hay coincidencias para "${searchTerm}".` : 'Aún no hay productos en el catálogo.'}
+              {barcodePrefix && searchTerm
+                ? `No hay coincidencias para "${searchTerm}" con código iniciando en "${barcodePrefix}".`
+                : barcodePrefix
+                ? `No hay productos cuyo código de barras empiece por "${barcodePrefix}".`
+                : searchTerm
+                ? `No hay coincidencias para "${searchTerm}".`
+                : 'Aún no hay productos en el catálogo.'}
             </p>
+            {(barcodePrefix || searchTerm) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchInput('');
+                  setSearchTerm('');
+                  setPrefixInput('');
+                  setBarcodePrefix('');
+                }}
+                className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold transition cursor-pointer"
+              >
+                Limpiar todos los filtros
+              </button>
+            )}
           </div>
         ) : viewMode === 'table' ? (
           <table className="w-full text-left text-xs text-gray-600 border-collapse">
             <thead className="sticky top-0 bg-gray-50/95 backdrop-blur-xs text-[10px] uppercase font-bold text-gray-500 border-b border-gray-200 tracking-wider z-10 shadow-2xs">
               <tr>
+                <th className="px-3.5 py-2 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
+                    }}
+                    onChange={toggleSelectAllVisible}
+                    className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                    title={allVisibleSelected ? 'Deseleccionar todos' : 'Seleccionar todos los visibles'}
+                  />
+                </th>
                 <th className="px-3.5 py-2">Imagen</th>
                 <th className="px-3.5 py-2">Producto / Nombre</th>
                 <th className="px-3.5 py-2">Código de barras</th>
@@ -267,61 +480,97 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {items.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50/80 transition group">
-                  <td className="px-3.5 py-1.5">
-                    <div className="h-10 w-10 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden shrink-0 flex items-center justify-center p-0.5">
-                      {p.image ? (
-                        <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-contain" />
-                      ) : (
-                        <span className="text-[8px] text-gray-400 font-medium text-center px-0.5">Sin foto</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3.5 py-1.5 max-w-md">
-                    <div className="font-bold text-gray-900 text-xs truncate" title={p.name}>{p.name}</div>
-                  </td>
-                  <td className="px-3.5 py-1.5 whitespace-nowrap"><BarcodeBadge code={p.code} /></td>
-                  <td className="px-3.5 py-1.5 whitespace-nowrap text-[11px] text-gray-500">{formatDate(p.createdAt)}</td>
-                  <td className="px-3.5 py-1.5 text-right whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-1">
-                      <button type="button" onClick={() => setEditingProduct(p)} className="p-1 rounded-lg text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition" title="Editar producto"><Edit2 className="h-3.5 w-3.5" /></button>
-                      <button type="button" onClick={() => setProductToDelete(p)} className="p-1 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition" title="Eliminar producto"><Trash2 className="h-3.5 w-3.5" /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {items.map((p) => {
+                const isSelected = selectedCodes.has(p.code);
+                return (
+                  <tr
+                    key={p.id}
+                    className={`transition group ${
+                      isSelected ? 'bg-emerald-50/70 hover:bg-emerald-100/60' : 'hover:bg-gray-50/80'
+                    }`}
+                  >
+                    <td className="px-3.5 py-1.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(p.code)}
+                        className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                      />
+                    </td>
+                    <td className="px-3.5 py-1.5">
+                      <div className="h-10 w-10 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden shrink-0 flex items-center justify-center p-0.5">
+                        {p.image ? (
+                          <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-contain" />
+                        ) : (
+                          <span className="text-[8px] text-gray-400 font-medium text-center px-0.5">Sin foto</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3.5 py-1.5 max-w-md">
+                      <div className="font-bold text-gray-900 text-xs truncate" title={p.name}>{p.name}</div>
+                    </td>
+                    <td className="px-3.5 py-1.5 whitespace-nowrap"><BarcodeBadge code={p.code} /></td>
+                    <td className="px-3.5 py-1.5 whitespace-nowrap text-[11px] text-gray-500">{formatDate(p.createdAt)}</td>
+                    <td className="px-3.5 py-1.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1">
+                        <button type="button" onClick={() => setEditingProduct(p)} className="p-1 rounded-lg text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition cursor-pointer" title="Editar producto"><Edit2 className="h-3.5 w-3.5" /></button>
+                        <button type="button" onClick={() => setProductToDelete(p)} className="p-1 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition cursor-pointer" title="Eliminar producto"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (
           <div className="p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
-            {items.map((p) => (
-              <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-2xs hover:shadow-md transition-shadow flex flex-col justify-between">
-                <div>
-                  <div className="relative h-36 sm:h-40 w-full bg-gray-50/60 border-b border-gray-100 flex items-center justify-center p-2 overflow-hidden">
-                    {p.image ? (
-                      <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-contain hover:scale-105 transition-transform duration-300" />
-                    ) : (
-                      <div className="text-center p-2 text-gray-400 text-[10px]"><PackageX className="h-6 w-6 mx-auto mb-1 opacity-40" /><span>Sin imagen</span></div>
-                    )}
-                    <div className="absolute top-1.5 right-1.5">
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-600/90 text-white shadow-xs backdrop-blur-xs"><CheckCircle2 className="h-2.5 w-2.5" /> Aprobado</span>
+            {items.map((p) => {
+              const isSelected = selectedCodes.has(p.code);
+              return (
+                <div
+                  key={p.id}
+                  className={`bg-white rounded-xl border overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between relative ${
+                    isSelected
+                      ? 'border-emerald-500 ring-2 ring-emerald-500/50 bg-emerald-50/15'
+                      : 'border-gray-200'
+                  }`}
+                >
+                  <div>
+                    <div className="relative h-36 sm:h-40 w-full bg-gray-50/60 border-b border-gray-100 flex items-center justify-center p-2 overflow-hidden">
+                      {/* Checkbox en la tarjeta */}
+                      <div className="absolute top-1.5 left-1.5 z-10">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(p.code)}
+                          className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer shadow-xs accent-emerald-600 bg-white/90"
+                        />
+                      </div>
+
+                      {p.image ? (
+                        <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-contain hover:scale-105 transition-transform duration-300" />
+                      ) : (
+                        <div className="text-center p-2 text-gray-400 text-[10px]"><PackageX className="h-6 w-6 mx-auto mb-1 opacity-40" /><span>Sin imagen</span></div>
+                      )}
+                      <div className="absolute top-1.5 right-1.5">
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-600/90 text-white shadow-xs backdrop-blur-xs"><CheckCircle2 className="h-2.5 w-2.5" /> Aprobado</span>
+                      </div>
+                    </div>
+                    <div className="p-2.5 space-y-1">
+                      <h3 className="font-bold text-gray-900 text-xs line-clamp-2 leading-tight" title={p.name}>{p.name}</h3>
+                      <div><BarcodeBadge code={p.code} /></div>
                     </div>
                   </div>
-                  <div className="p-2.5 space-y-1">
-                    <h3 className="font-bold text-gray-900 text-xs line-clamp-2 leading-tight" title={p.name}>{p.name}</h3>
-                    <div><BarcodeBadge code={p.code} /></div>
+                  <div className="px-2.5 py-1.5 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-[9px] text-gray-400">{formatDate(p.createdAt)}</span>
+                    <div className="flex items-center gap-0.5">
+                      <button type="button" onClick={() => setEditingProduct(p)} className="p-1 rounded-md text-gray-600 hover:bg-emerald-100 hover:text-emerald-700 transition cursor-pointer" title="Editar"><Edit2 className="h-3 w-3" /></button>
+                      <button type="button" onClick={() => setProductToDelete(p)} className="p-1 rounded-md text-gray-400 hover:bg-red-100 hover:text-red-600 transition cursor-pointer" title="Eliminar"><Trash2 className="h-3 w-3" /></button>
+                    </div>
                   </div>
                 </div>
-                <div className="px-2.5 py-1.5 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-[9px] text-gray-400">{formatDate(p.createdAt)}</span>
-                  <div className="flex items-center gap-0.5">
-                    <button type="button" onClick={() => setEditingProduct(p)} className="p-1 rounded-md text-gray-600 hover:bg-emerald-100 hover:text-emerald-700 transition" title="Editar"><Edit2 className="h-3 w-3" /></button>
-                    <button type="button" onClick={() => setProductToDelete(p)} className="p-1 rounded-md text-gray-400 hover:bg-red-100 hover:text-red-600 transition" title="Eliminar"><Trash2 className="h-3 w-3" /></button>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -336,10 +585,59 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
         {/* End of list banner */}
         {!initialLoading && items.length > 0 && items.length >= total && (
           <div className="py-2.5 text-center text-[10px] text-gray-400 border-t border-gray-100 bg-gray-50/50">
-            ✓ Fin del catálogo ({total.toLocaleString('es')} productos)
+            ✓ Fin del catálogo ({total.toLocaleString('es')} producto{total === 1 ? '' : 's'}
+            {barcodePrefix ? ` con código que inicia en "${barcodePrefix}"` : ''})
           </div>
         )}
       </div>
+
+      {/* Floating Action Bar for Multiple Selection */}
+      {selectedCodes.size > 0 && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-gray-900/95 backdrop-blur-md text-white rounded-2xl px-4 py-2.5 shadow-2xl border border-gray-700/80 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <div className="flex items-center gap-2 pr-3 border-r border-gray-700">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-extrabold text-gray-950">
+              {selectedCodes.size}
+            </span>
+            <span className="text-xs font-semibold whitespace-nowrap">
+              {selectedCodes.size} seleccionado{selectedCodes.size === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleSelectAllVisible}
+            className="text-xs text-gray-300 hover:text-white transition cursor-pointer whitespace-nowrap"
+          >
+            {allVisibleSelected ? 'Deseleccionar todos' : `Seleccionar visibles (${items.length})`}
+          </button>
+
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="text-xs text-gray-400 hover:text-gray-200 transition cursor-pointer whitespace-nowrap"
+          >
+            Limpiar
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowBatchDeleteModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md shadow-red-600/30 transition cursor-pointer whitespace-nowrap"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            <span>Eliminar ({selectedCodes.size})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="p-1 text-gray-400 hover:text-white transition cursor-pointer rounded-lg hover:bg-gray-800"
+            title="Cerrar selección"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Edit Product Modal */}
       <ProductEditModal
@@ -354,7 +652,7 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
         }}
       />
 
-      {/* Delete Confirmation Modal */}
+      {/* Single Delete Confirmation Modal */}
       {productToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-gray-100 space-y-4">
@@ -370,8 +668,83 @@ export const GestionarView: React.FC<GestionarViewProps> = ({ currentUser, onCou
               <p className="font-mono text-gray-500">Código: {productToDelete.code}</p>
             </div>
             <div className="flex items-center justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setProductToDelete(null)} className="rounded-xl bg-gray-100 hover:bg-gray-200 px-4 py-2 text-xs font-semibold text-gray-700 transition">Cancelar</button>
-              <button type="button" onClick={() => handleDelete(productToDelete)} className="rounded-xl bg-red-600 hover:bg-red-700 px-4 py-2 text-xs font-bold text-white shadow-md shadow-red-600/20 transition">Sí, Eliminar</button>
+              <button type="button" onClick={() => setProductToDelete(null)} className="rounded-xl bg-gray-100 hover:bg-gray-200 px-4 py-2 text-xs font-semibold text-gray-700 transition cursor-pointer">Cancelar</button>
+              <button type="button" onClick={() => handleDelete(productToDelete)} className="rounded-xl bg-red-600 hover:bg-red-700 px-4 py-2 text-xs font-bold text-white shadow-md shadow-red-600/20 transition cursor-pointer">Sí, Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Delete Confirmation Modal */}
+      {showBatchDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-gray-100 space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center gap-3 text-red-600 shrink-0">
+              <div className="h-10 w-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">
+                  ¿Eliminar {selectedCodes.size} producto{selectedCodes.size === 1 ? '' : 's'} seleccionado{selectedCodes.size === 1 ? '' : 's'}?
+                </h3>
+                <p className="text-xs text-gray-500">
+                  Esta acción es irreversible y los eliminará permanentemente del catálogo.
+                </p>
+              </div>
+            </div>
+
+            {/* List preview of items to delete */}
+            <div className="flex-1 min-h-0 overflow-y-auto max-h-56 divide-y divide-gray-100 rounded-xl border border-gray-200 bg-gray-50 p-2 text-xs">
+              {items
+                .filter((p) => selectedCodes.has(p.code))
+                .map((p) => (
+                  <div key={p.code} className="flex items-center justify-between py-1.5 px-2 hover:bg-white rounded-lg transition">
+                    <div className="flex items-center gap-2 truncate mr-2">
+                      <div className="h-7 w-7 rounded bg-white border border-gray-200 overflow-hidden shrink-0 flex items-center justify-center">
+                        {p.image ? (
+                          <img src={p.image} alt={p.name} className="h-full w-full object-contain" />
+                        ) : (
+                          <PackageX className="h-3.5 w-3.5 text-gray-300" />
+                        )}
+                      </div>
+                      <span className="font-medium text-gray-800 truncate" title={p.name}>
+                        {p.name}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[11px] text-gray-500 shrink-0">
+                      {p.code}
+                    </span>
+                  </div>
+                ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 shrink-0">
+              <button
+                type="button"
+                disabled={batchDeleting}
+                onClick={() => setShowBatchDeleteModal(false)}
+                className="rounded-xl bg-gray-100 hover:bg-gray-200 px-4 py-2 text-xs font-semibold text-gray-700 transition disabled:opacity-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={batchDeleting}
+                onClick={handleBatchDelete}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 hover:bg-red-700 px-4 py-2 text-xs font-bold text-white shadow-md shadow-red-600/20 transition disabled:opacity-50 cursor-pointer"
+              >
+                {batchDeleting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Eliminando…</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Sí, Eliminar {selectedCodes.size}</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

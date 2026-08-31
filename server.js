@@ -392,20 +392,109 @@ app.post('/api/login', (req, res) => {
 
 app.post('/api/logout', (_req, res) => { clearCookie(res); res.json({ ok: true }); });
 
+// ─────────────── Cache en memoria de productos y Prefijo de Código ───────────────
+const _catalogCache = {
+  aprobado: { items: [], timestamp: 0, fetching: null },
+  pendiente: { items: [], timestamp: 0, fetching: null },
+};
+
+function invalidateCatalogCache(status) {
+  if (status && _catalogCache[status]) {
+    _catalogCache[status] = { items: [], timestamp: 0, fetching: null };
+  } else {
+    _catalogCache.aprobado = { items: [], timestamp: 0, fetching: null };
+    _catalogCache.pendiente = { items: [], timestamp: 0, fetching: null };
+  }
+}
+
+async function fetchAllProductsFromBackend(status) {
+  const cacheKey = status === 'pendiente' ? 'pendiente' : 'aprobado';
+  const now = Date.now();
+  if (_catalogCache[cacheKey].items.length > 0 && (now - _catalogCache[cacheKey].timestamp) < 60000) {
+    return _catalogCache[cacheKey].items;
+  }
+  if (_catalogCache[cacheKey].fetching) {
+    return _catalogCache[cacheKey].fetching;
+  }
+
+  const endpoint = status === 'pendiente' ? '/admin/pendientes' : '/admin/productos';
+  const mapper = status === 'pendiente' ? pendienteToProduct : masterToProduct;
+
+  _catalogCache[cacheKey].fetching = (async () => {
+    try {
+      const firstRes = await backend(`${endpoint}?limit=100&offset=0`, {});
+      const firstData = await firstRes.json().catch(() => ({}));
+      if (!firstRes.ok) throw new Error(firstData.error || 'Error al obtener productos');
+      const total = firstData.total || 0;
+      let rawItems = firstData.items || [];
+      if (total > 100) {
+        const pageOffsets = [];
+        for (let off = 100; off < total; off += 100) {
+          pageOffsets.push(off);
+        }
+        const pages = await Promise.all(
+          pageOffsets.map(async (off) => {
+            const r = await backend(`${endpoint}?limit=100&offset=${off}`, {});
+            const d = await r.json().catch(() => ({ items: [] }));
+            return d.items || [];
+          })
+        );
+        for (const pg of pages) {
+          rawItems.push(...pg);
+        }
+      }
+      const mapped = rawItems.map(mapper);
+      _catalogCache[cacheKey] = { items: mapped, timestamp: Date.now(), fetching: null };
+      return mapped;
+    } catch (err) {
+      _catalogCache[cacheKey].fetching = null;
+      throw err;
+    }
+  })();
+
+  return _catalogCache[cacheKey].fetching;
+}
+
 // ─────────────── Rutas de productos ───────────────
 /**
- * GET /api/products?status=aprobado|pendiente&buscar=&limit=&offset=
- * Pagina de verdad contra el backend (que ya resuelve la búsqueda con FTS5 en
- * el maestro y LIKE indexado en pendientes) — nunca carga el catálogo entero
- * en memoria, así funciona igual de bien con 100 productos que con 10,000.
+ * GET /api/products?status=aprobado|pendiente&buscar=&codigoPrefix=&limit=&offset=
+ * Soporta filtrado por prefijo de código de barras (ej. que empiecen por 1, 7, 775 o cualquier número),
+ * además de búsqueda por texto y paginación rápida.
  */
 app.get('/api/products', requireAuth, async (req, res) => {
   try {
     const status = req.query.status === 'pendiente' ? 'pendiente' : 'aprobado';
+    const codigoPrefix = req.query.codigoPrefix ? String(req.query.codigoPrefix).trim() : '';
+    const buscar = req.query.buscar ? String(req.query.buscar).trim() : '';
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
+    if (codigoPrefix) {
+      let items = await fetchAllProductsFromBackend(status);
+      // Filtrar estrictamente por inicio de código de barras
+      items = items.filter((p) => String(p.code || '').startsWith(codigoPrefix));
+      if (buscar) {
+        const qLower = buscar.toLowerCase();
+        items = items.filter(
+          (p) =>
+            (p.name || '').toLowerCase().includes(qLower) ||
+            (p.code || '').toLowerCase().includes(qLower)
+        );
+      }
+      const total = items.length;
+      const sliced = items.slice(offset, offset + limit);
+      return res.json({
+        items: sliced,
+        total,
+        limit,
+        offset,
+      });
+    }
+
     const qs = new URLSearchParams();
-    if (req.query.buscar) qs.set('buscar', String(req.query.buscar));
-    if (req.query.limit) qs.set('limit', String(req.query.limit));
-    if (req.query.offset) qs.set('offset', String(req.query.offset));
+    if (buscar) qs.set('buscar', buscar);
+    qs.set('limit', String(limit));
+    qs.set('offset', String(offset));
 
     const path = status === 'pendiente' ? `/admin/pendientes?${qs}` : `/admin/productos?${qs}`;
     const r = await backend(path, {});
@@ -472,6 +561,7 @@ app.post('/api/products', requireAuth, async (req, res) => {
       const data = await r.json().catch(() => ({}));
       if (r.status === 409) return res.status(409).json({ error: data.error || `Ya existe un producto con el código "${cleanCode}".` });
       if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
+      invalidateCatalogCache('pendiente');
       return res.status(201).json({
         product: { id: cleanCode, code: cleanCode, name: cleanName, image: imagenUrl || '', status: 'pendiente', createdBy: req.session.username, createdAt: new Date().toISOString() },
       });
@@ -484,6 +574,7 @@ app.post('/api/products', requireAuth, async (req, res) => {
     const data = await r.json().catch(() => ({}));
     if (r.status === 409) return res.status(409).json({ error: data.error || `Ya existe un producto con el código "${cleanCode}".` });
     if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
+    invalidateCatalogCache('aprobado');
     res.status(201).json({
       product: { id: cleanCode, code: cleanCode, name: cleanName, image: imagenUrl || '', status: 'aprobado', createdAt: new Date().toISOString() },
     });
@@ -550,6 +641,7 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
       if (targetCode !== oldCode) {
         await backend(`/admin/pendientes/${encodeURIComponent(oldCode)}`, { method: 'DELETE' }).catch(() => {});
       }
+      invalidateCatalogCache('pendiente');
       return res.json({ product: { id: targetCode, code: targetCode, name: cleanName, image: imagenUrl || '', status: 'pendiente' } });
     }
 
@@ -575,6 +667,7 @@ app.put('/api/products/:code', requireAuth, async (req, res) => {
       if (!r.ok) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
     }
 
+    invalidateCatalogCache('aprobado');
     res.json({ product: { id: targetCode, code: targetCode, name: cleanName, image: imagenUrl || '', status: 'aprobado' } });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -604,13 +697,62 @@ app.delete('/api/products/:code', requireAuth, async (req, res) => {
 
   const data = await r.json().catch(() => ({}));
   if (!r.ok && r.status !== 404) return res.status(r.status || 502).json({ error: data.error || `Error del backend (${r.status}).` });
+  invalidateCatalogCache(status === 'pendiente' ? 'pendiente' : 'aprobado');
   res.json({ ok: true });
+});
+
+/**
+ * POST /api/products/delete-many
+ * Eliminación múltiple de productos en lote.
+ */
+app.post('/api/products/delete-many', requireAuth, async (req, res) => {
+  try {
+    const { codes, status } = req.body || {};
+    if (!Array.isArray(codes) || codes.length === 0) {
+      return res.status(400).json({ error: 'Se requiere una lista de códigos a eliminar.' });
+    }
+
+    const st = status === 'pendiente' ? 'pendiente' : 'aprobado';
+    const deleted = [];
+    const errors = [];
+
+    // Procesar en lotes concurrentes de 20
+    const BATCH = 20;
+    for (let i = 0; i < codes.length; i += BATCH) {
+      const chunk = codes.slice(i, i + BATCH);
+      await Promise.all(
+        chunk.map(async (code) => {
+          const cleanCode = String(code).trim();
+          if (!cleanCode) return;
+          try {
+            const route = st === 'pendiente' ? `/admin/pendientes/${encodeURIComponent(cleanCode)}` : `/admin/productos/${encodeURIComponent(cleanCode)}`;
+            const r = await backend(route, { method: 'DELETE' });
+            if (r.ok || r.status === 404) {
+              deleted.push(cleanCode);
+              borrarImagenCloudflare(cleanCode).catch(() => {});
+            } else {
+              const d = await r.json().catch(() => ({}));
+              errors.push({ code: cleanCode, error: d.error || `Error (${r.status})` });
+            }
+          } catch (err) {
+            errors.push({ code: cleanCode, error: err.message });
+          }
+        })
+      );
+    }
+
+    invalidateCatalogCache(st);
+    res.json({ ok: true, count: deleted.length, deleted, errors });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/products/:code/approve', requireAuth, async (req, res) => {
   const r = await backend(`/admin/pendientes/${encodeURIComponent(req.params.code)}/aprobar`, { method: 'POST' });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) return res.status(r.status || 502).json({ error: data.error || 'No se pudo aprobar.' });
+  invalidateCatalogCache();
   res.json({ ok: true });
 });
 
@@ -647,6 +789,7 @@ app.post('/api/products/bulk', requireAuth, async (req, res) => {
     }
   }
 
+  invalidateCatalogCache('aprobado');
   res.json({ ok: true, total: items.length, creados, actualizados, errores });
 });
 

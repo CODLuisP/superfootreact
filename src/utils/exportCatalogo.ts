@@ -18,16 +18,24 @@ const VERDE_OSCURO = '059669'; // emerald-600
 const GRIS_CLARO = 'F3F4F6';
 const GRIS_TEXTO = '6B7280';
 
-async function cargarTodos(buscar?: string): Promise<Product[]> {
+async function cargarTodos(buscar?: string, codigoPrefix?: string): Promise<Product[]> {
   const items: Product[] = [];
   let offset = 0;
   for (;;) {
-    const pagina = await api.getProductsPage({ status: 'aprobado', buscar, limit: BLOQUE, offset });
+    const pagina = await api.getProductsPage({ status: 'aprobado', buscar, codigoPrefix, limit: BLOQUE, offset });
     items.push(...pagina.items);
     offset += BLOQUE;
     if (offset >= pagina.total || pagina.items.length === 0) break;
   }
   return items;
+}
+
+function formatFilterSubtitle(itemsCount: number, buscar?: string, codigoPrefix?: string): string {
+  const filters: string[] = [];
+  if (codigoPrefix) filters.push(`Código inicia con "${codigoPrefix}"`);
+  if (buscar) filters.push(`Búsqueda: "${buscar}"`);
+  const filterText = filters.length > 0 ? `  ·  Filtro: ${filters.join(', ')}` : '';
+  return `Generado el ${new Date().toLocaleString('es')}  ·  ${itemsCount.toLocaleString('es')} producto(s)${filterText}`;
 }
 
 function nombreArchivo(ext: string) {
@@ -52,8 +60,8 @@ function fechaCorta(iso: string) {
 }
 
 // ─────────────── CSV ───────────────
-export async function exportarCSV(buscar?: string): Promise<number> {
-  const items = await cargarTodos(buscar);
+export async function exportarCSV(buscar?: string, codigoPrefix?: string): Promise<number> {
+  const items = await cargarTodos(buscar, codigoPrefix);
   const headers = ['Código de Barras', 'Nombre del Producto', 'Estado', 'Última Actualización'];
   const rows = items.map((p) => [p.code, p.name, 'Aprobado', fechaCorta(p.createdAt)]);
   const csv = '﻿' + [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -62,8 +70,8 @@ export async function exportarCSV(buscar?: string): Promise<number> {
 }
 
 // ─────────────── Excel (.xlsx) ───────────────
-export async function exportarExcel(buscar?: string): Promise<number> {
-  const items = await cargarTodos(buscar);
+export async function exportarExcel(buscar?: string, codigoPrefix?: string): Promise<number> {
+  const items = await cargarTodos(buscar, codigoPrefix);
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Superfood';
@@ -95,7 +103,7 @@ export async function exportarExcel(buscar?: string): Promise<number> {
 
   sheet.mergeCells('A2:D2');
   const subtitulo = sheet.getCell('A2');
-  subtitulo.value = `Generado el ${new Date().toLocaleString('es')}  ·  ${items.length.toLocaleString('es')} producto(s)${buscar ? `  ·  Filtro: "${buscar}"` : ''}`;
+  subtitulo.value = formatFilterSubtitle(items.length, buscar, codigoPrefix);
   subtitulo.font = { italic: true, size: 10, color: { argb: `FF${GRIS_TEXTO}` } };
   sheet.getRow(2).height = 18;
 
@@ -140,8 +148,8 @@ export async function exportarExcel(buscar?: string): Promise<number> {
 }
 
 // ─────────────── PDF ───────────────
-export async function exportarPDF(buscar?: string): Promise<number> {
-  const items = await cargarTodos(buscar);
+export async function exportarPDF(buscar?: string, codigoPrefix?: string): Promise<number> {
+  const items = await cargarTodos(buscar, codigoPrefix);
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -158,7 +166,7 @@ export async function exportarPDF(buscar?: string): Promise<number> {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(
-      `Generado el ${new Date().toLocaleString('es')}  ·  ${items.length.toLocaleString('es')} producto(s)${buscar ? `  ·  Filtro: "${buscar}"` : ''}`,
+      formatFilterSubtitle(items.length, buscar, codigoPrefix),
       40,
       48
     );
